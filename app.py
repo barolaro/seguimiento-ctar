@@ -18,6 +18,7 @@ BASE = Path(__file__).parent
 DATA_FILE = BASE / "data" / "solicitudes.json"
 UPLOAD_DIR = BASE / "data" / "documentos"
 LOGO = BASE / "assets" / "logo_ssmoc.jpg"
+PLANTILLA_SOLICITUDES = BASE / "assets" / "plantilla_solicitudes_ctar.b64"
 ETAPAS = ["Hospital envía", "CTAR revisa", "CTAR acuerda", "Acta se firma", "Proceso finaliza"]
 TIPOS_MATERIA = ["Baja", "Reposición", "Adquisición / gradualidad", "Especificaciones técnicas", "Evaluación", "Informativo", "Administrativo", "Tema general CTAR"]
 FORMALIZACIONES = ["Borrador interno", "En revisión CTAR", "Acuerdo adoptado", "Acta en firma", "Formalizado"]
@@ -222,6 +223,41 @@ def normalizar_numero_ctar(valor):
     if texto.endswith(".0"):
         texto = texto[:-2]
     return texto or "Sin asignar"
+
+
+def leer_plantilla_solicitudes(archivo):
+    columnas = [
+        "Tipo de solicitud *", "Tema o equipo *", "Servicio solicitante *", "Número SIC",
+        "Número de inventario", "Cantidad *", "Fecha de solicitud *",
+        "Motivo de la solicitud *", "Observaciones", "Prioridad *",
+    ]
+    tabla = pd.read_excel(archivo, sheet_name="Solicitudes", header=3, dtype=object)
+    faltantes = [columna for columna in columnas if columna not in tabla.columns]
+    if faltantes:
+        raise ValueError("La planilla no corresponde al modelo oficial o se modificaron sus columnas.")
+    tabla = tabla[columnas].dropna(how="all").copy()
+    if tabla.empty:
+        raise ValueError("La planilla no contiene solicitudes para importar.")
+    obligatorias = ["Tipo de solicitud *", "Tema o equipo *", "Servicio solicitante *", "Cantidad *", "Fecha de solicitud *", "Motivo de la solicitud *", "Prioridad *"]
+    incompletas = tabla[obligatorias].isna().any(axis=1)
+    if incompletas.any():
+        filas = ", ".join(str(int(i) + 5) for i in tabla.index[incompletas])
+        raise ValueError(f"Faltan campos obligatorios en las filas: {filas}.")
+    tabla["Tipo de solicitud *"] = tabla["Tipo de solicitud *"].astype(str).str.strip()
+    tabla["Prioridad *"] = tabla["Prioridad *"].astype(str).str.strip()
+    if not tabla["Tipo de solicitud *"].isin(["Baja", "Reposición"]).all():
+        raise ValueError("El tipo de solicitud debe ser Baja o Reposición.")
+    if not tabla["Prioridad *"].isin(["Alta", "Media", "Baja"]).all():
+        raise ValueError("La prioridad debe ser Alta, Media o Baja.")
+    tabla["Cantidad *"] = pd.to_numeric(tabla["Cantidad *"], errors="coerce")
+    if tabla["Cantidad *"].isna().any() or (tabla["Cantidad *"] < 1).any():
+        raise ValueError("La cantidad debe ser un número entero mayor o igual a 1.")
+    fechas = pd.to_datetime(tabla["Fecha de solicitud *"], errors="coerce")
+    if fechas.isna().any():
+        raise ValueError("Existe una fecha inválida. Utiliza el formato AAAA-MM-DD.")
+    tabla["Fecha de solicitud *"] = fechas.dt.strftime("%Y-%m-%d")
+    tabla = tabla.fillna("")
+    return tabla
 
 
 def cargar():
@@ -811,6 +847,101 @@ def main():
                     guardar(datos)
                     st.session_state["sesion_actualizada"] = f"Se actualizaron {actualizados} temas del CTAR N.° {sesion_gestionada}."
                     st.rerun()
+
+        with st.expander("📊 Importar bajas y reposiciones desde Excel", expanded=False):
+            st.info("Descarga el modelo para enviarlo al Hospital. Al recibirlo completo, podrás revisar e incorporar todas las solicitudes de una sola vez.")
+            if PLANTILLA_SOLICITUDES.exists():
+                st.download_button(
+                    "⬇ Descargar plantilla oficial",
+                    base64.b64decode(PLANTILLA_SOLICITUDES.read_text(encoding="utf-8")),
+                    file_name="Plantilla_Solicitudes_Bajas_Reposiciones_CTAR.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
+            archivo_masivo = st.file_uploader("Planilla completada por el Hospital", type=["xlsx"], key="archivo_importacion_masiva")
+            if st.button("Analizar planilla", disabled=archivo_masivo is None, use_container_width=True, key="analizar_masivo"):
+                try:
+                    tabla_masiva = leer_plantilla_solicitudes(archivo_masivo)
+                    registros = []
+                    for _, fila in tabla_masiva.iterrows():
+                        registros.append({
+                            "Importar": True,
+                            "Tipo": str(fila["Tipo de solicitud *"]),
+                            "Tema o equipo": str(fila["Tema o equipo *"]).strip(),
+                            "Servicio": str(fila["Servicio solicitante *"]).strip(),
+                            "SIC": str(fila["Número SIC"]).strip() or "Por asignar",
+                            "Inventario": str(fila["Número de inventario"]).strip() or "Por confirmar",
+                            "Cantidad": int(float(fila["Cantidad *"])),
+                            "Fecha": str(fila["Fecha de solicitud *"]),
+                            "Motivo": str(fila["Motivo de la solicitud *"]).strip(),
+                            "Observaciones": str(fila["Observaciones"]).strip(),
+                            "Prioridad": str(fila["Prioridad *"]),
+                            "Visible Hospital": True,
+                        })
+                    st.session_state["importacion_masiva"] = registros
+                    st.rerun()
+                except Exception as error:
+                    st.error(f"No fue posible analizar la planilla: {error}")
+
+            if st.session_state.get("importacion_masiva"):
+                st.success(f"Se detectaron {len(st.session_state['importacion_masiva'])} solicitudes. Revisa la información antes de guardarla.")
+                revision_masiva = st.data_editor(
+                    pd.DataFrame(st.session_state["importacion_masiva"]),
+                    hide_index=True,
+                    use_container_width=True,
+                    column_config={
+                        "Importar": st.column_config.CheckboxColumn(required=True),
+                        "Tipo": st.column_config.SelectboxColumn(options=["Baja", "Reposición"], required=True),
+                        "Prioridad": st.column_config.SelectboxColumn(options=["Alta", "Media", "Baja"], required=True),
+                        "Visible Hospital": st.column_config.CheckboxColumn(required=True),
+                        "Cantidad": st.column_config.NumberColumn(min_value=1, step=1, required=True),
+                    },
+                    disabled=["Fecha"],
+                    key="revision_importacion_masiva",
+                )
+                im1, im2 = st.columns(2)
+                if im1.button("Incorporar solicitudes seleccionadas", type="primary", use_container_width=True, key="guardar_masivo"):
+                    existentes = {
+                        (str(x.get("tema", "")).strip().lower(), str(x.get("sic", "")).strip().lower(), str(x.get("inventario", "")).strip().lower())
+                        for x in datos
+                    }
+                    creadas = 0
+                    omitidas = 0
+                    for _, fila in revision_masiva.iterrows():
+                        if not valor_booleano(fila["Importar"]):
+                            continue
+                        cantidad = int(fila["Cantidad"])
+                        tema_base = str(fila["Tema o equipo"]).strip()
+                        tema = f"{tema_base} ({cantidad})" if cantidad > 1 else tema_base
+                        clave = (tema.lower(), str(fila["SIC"]).strip().lower(), str(fila["Inventario"]).strip().lower())
+                        if clave in existentes:
+                            omitidas += 1
+                            continue
+                        observacion = str(fila["Observaciones"]).strip()
+                        observacion = f"Prioridad informada por el Hospital: {fila['Prioridad']}." + (f" {observacion}" if observacion else "")
+                        datos.insert(0, {
+                            "id": f"CTAR-{datetime.now().strftime('%Y%m%d%H%M%S%f')}",
+                            "tema": tema, "hospital": "Hospital Dr. Félix Bulnes",
+                            "servicio": str(fila["Servicio"]).strip(), "sic": str(fila["SIC"]).strip(),
+                            "inventario": str(fila["Inventario"]).strip(), "motivo": str(fila["Motivo"]).strip(),
+                            "fecha_ingreso": str(fila["Fecha"]), "estado": "Hospital envía",
+                            "ultima_actualizacion": f"{date.today().isoformat()} - Solicitud incorporada desde planilla del Hospital",
+                            "proximo_paso": PROXIMOS["Hospital envía"], "observaciones": observacion,
+                            "documentos": [], "clase_registro": "Solicitud / equipo", "ctar_numero": "Sin asignar",
+                            "tipo_materia": str(fila["Tipo"]), "formalizacion": "En revisión CTAR",
+                            "publicar_hospital": "TRUE" if valor_booleano(fila["Visible Hospital"]) else "FALSE",
+                        })
+                        existentes.add(clave)
+                        creadas += 1
+                    guardar(datos)
+                    del st.session_state["importacion_masiva"]
+                    st.session_state["resultado_masivo"] = f"Se incorporaron {creadas} solicitudes. Se omitieron {omitidas} posibles duplicados."
+                    st.rerun()
+                if im2.button("Cancelar importación", use_container_width=True, key="cancelar_masivo"):
+                    del st.session_state["importacion_masiva"]
+                    st.rerun()
+            if st.session_state.get("resultado_masivo"):
+                st.success(st.session_state.pop("resultado_masivo"))
 
         with st.expander("➕ Registrar una nueva solicitud", expanded=False):
             with st.form("nueva"):

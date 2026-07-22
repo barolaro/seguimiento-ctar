@@ -603,7 +603,6 @@ def vista_hospital(datos):
         ["Solicitudes del Hospital", "Sesiones y actas CTAR"],
         default="Solicitudes del Hospital",
         label_visibility="collapsed",
-        use_container_width=True,
     )
     if seccion == "Sesiones y actas CTAR":
         vista_sesiones_hospital(temas_sesion)

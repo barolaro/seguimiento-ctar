@@ -211,6 +211,13 @@ def valor_booleano(valor):
     return str(valor).strip().lower() in {"true", "verdadero", "1", "sí", "si"}
 
 
+def normalizar_numero_ctar(valor):
+    texto = str(valor or "Sin asignar").strip()
+    if texto.endswith(".0"):
+        texto = texto[:-2]
+    return texto or "Sin asignar"
+
+
 def cargar():
     conexion = cliente_gsheets()
     if conexion:
@@ -226,7 +233,7 @@ def cargar():
                 except json.JSONDecodeError:
                     registro["documentos"] = []
                 registro.setdefault("clase_registro", "Solicitud / equipo")
-                registro.setdefault("ctar_numero", "Sin asignar")
+                registro["ctar_numero"] = normalizar_numero_ctar(registro.get("ctar_numero", "Sin asignar"))
                 registro.setdefault("tipo_materia", "Tema general CTAR")
                 registro.setdefault("formalizacion", "En revisión CTAR")
                 registro.setdefault("publicar_hospital", True)
@@ -251,6 +258,8 @@ def guardar(datos):
         for item in datos:
             fila = item.copy()
             fila["documentos"] = json.dumps(fila.get("documentos", []), ensure_ascii=False)
+            fila["ctar_numero"] = normalizar_numero_ctar(fila.get("ctar_numero", "Sin asignar"))
+            fila["publicar_hospital"] = "TRUE" if valor_booleano(fila.get("publicar_hospital", False)) else "FALSE"
             filas.append(fila)
         tabla = pd.DataFrame(filas, columns=columnas)
         conexion.update(worksheet="solicitudes", data=tabla)
@@ -760,9 +769,11 @@ def main():
         temas_administrados = [x for x in datos if x.get("clase_registro") == "Tema de sesión"]
         if temas_administrados:
             with st.expander("🗂️ Gestionar sesiones y actas CTAR", expanded=False):
-                numeros_sesion = sorted({str(x.get("ctar_numero", "Sin asignar")) for x in temas_administrados}, reverse=True)
+                if st.session_state.get("sesion_actualizada"):
+                    st.success(st.session_state.pop("sesion_actualizada"))
+                numeros_sesion = sorted({normalizar_numero_ctar(x.get("ctar_numero", "Sin asignar")) for x in temas_administrados}, reverse=True)
                 sesion_gestionada = st.selectbox("Seleccionar sesión", numeros_sesion, key="admin_session_select")
-                items_sesion = [x for x in temas_administrados if str(x.get("ctar_numero", "Sin asignar")) == sesion_gestionada]
+                items_sesion = [x for x in temas_administrados if normalizar_numero_ctar(x.get("ctar_numero", "Sin asignar")) == sesion_gestionada]
                 visibles_sesion = sum(valor_booleano(x.get("publicar_hospital", False)) for x in items_sesion)
                 st.caption(f"CTAR N.° {sesion_gestionada}: {len(items_sesion)} tema(s) · {visibles_sesion} visible(s) para el Hospital")
                 gs1, gs2 = st.columns(2)
@@ -782,11 +793,17 @@ def main():
                 if formalizacion_sesion != "Formalizado" and publicar_sesion:
                     st.info("La sesión se mostrará al Hospital con una advertencia de que el documento aún está en elaboración.")
                 if st.button("Aplicar a toda la sesión", type="primary", use_container_width=True, key="admin_session_apply"):
-                    for item in items_sesion:
-                        item["formalizacion"] = formalizacion_sesion
-                        item["publicar_hospital"] = publicar_sesion
-                        item["ultima_actualizacion"] = f"{date.today().isoformat()} - Sesión CTAR N.° {sesion_gestionada} actualizada"
+                    actualizados = 0
+                    for item in datos:
+                        if (item.get("clase_registro") == "Tema de sesión" and
+                                normalizar_numero_ctar(item.get("ctar_numero", "Sin asignar")) == sesion_gestionada):
+                            item["ctar_numero"] = sesion_gestionada
+                            item["formalizacion"] = formalizacion_sesion
+                            item["publicar_hospital"] = "TRUE" if publicar_sesion else "FALSE"
+                            item["ultima_actualizacion"] = f"{date.today().isoformat()} - Sesión CTAR N.° {sesion_gestionada} actualizada"
+                            actualizados += 1
                     guardar(datos)
+                    st.session_state["sesion_actualizada"] = f"Se actualizaron {actualizados} temas del CTAR N.° {sesion_gestionada}."
                     st.rerun()
 
         with st.expander("➕ Registrar una nueva solicitud", expanded=False):

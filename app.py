@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-from supabase import Client, create_client
+from streamlit_gsheets import GSheetsConnection
 
 BASE = Path(__file__).parent
 DATA_FILE = BASE / "data" / "solicitudes.json"
@@ -54,28 +54,37 @@ def datos_iniciales():
     ]
 
 
-@st.cache_resource
-def cliente_supabase():
+def cliente_gsheets():
     try:
-        url = st.secrets["SUPABASE_URL"]
-        key = st.secrets["SUPABASE_KEY"]
-        return create_client(url, key)
+        configuracion = st.secrets["connections"]["gsheets"]
+        if not configuracion.get("spreadsheet"):
+            return None
+        return st.connection("gsheets", type=GSheetsConnection)
     except (KeyError, FileNotFoundError):
         return None
 
 
 def almacenamiento_permanente():
-    return cliente_supabase() is not None
+    return cliente_gsheets() is not None
 
 
 def cargar():
-    db = cliente_supabase()
-    if db:
+    conexion = cliente_gsheets()
+    if conexion:
         try:
-            respuesta = db.table("solicitudes").select("data").order("updated_at", desc=True).execute()
-            return [fila["data"] for fila in respuesta.data]
+            tabla = conexion.read(worksheet="solicitudes", ttl=0).dropna(how="all").fillna("")
+            if tabla.empty:
+                return []
+            registros = tabla.to_dict("records")
+            for registro in registros:
+                documentos = registro.get("documentos", "[]")
+                try:
+                    registro["documentos"] = json.loads(documentos) if isinstance(documentos, str) else []
+                except json.JSONDecodeError:
+                    registro["documentos"] = []
+            return registros
         except Exception as error:
-            st.error(f"No fue posible conectar con la base de datos: {error}")
+            st.error(f"No fue posible leer la planilla de Google Sheets: {error}")
             return []
     DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
     if not DATA_FILE.exists():
@@ -87,21 +96,22 @@ def cargar():
 
 
 def guardar(datos):
-    db = cliente_supabase()
-    if db:
-        if datos:
-            filas = [{"id": item["id"], "data": item, "updated_at": datetime.now().isoformat()} for item in datos]
-            db.table("solicitudes").upsert(filas).execute()
+    conexion = cliente_gsheets()
+    if conexion:
+        columnas = ["id", "tema", "hospital", "servicio", "sic", "inventario", "motivo", "fecha_ingreso", "estado", "ultima_actualizacion", "proximo_paso", "observaciones", "documentos"]
+        filas = []
+        for item in datos:
+            fila = item.copy()
+            fila["documentos"] = json.dumps(fila.get("documentos", []), ensure_ascii=False)
+            filas.append(fila)
+        tabla = pd.DataFrame(filas, columns=columnas)
+        conexion.update(worksheet="solicitudes", data=tabla)
         return
     DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
     DATA_FILE.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def eliminar_solicitud(solicitud_id):
-    db = cliente_supabase()
-    if db:
-        db.table("solicitudes").delete().eq("id", solicitud_id).execute()
-        return
     datos = [item for item in cargar() if item["id"] != solicitud_id]
     guardar(datos)
 
@@ -179,7 +189,7 @@ def main():
     st.markdown("<div class='pasos'>" + "".join([f"<div class='paso'><span class='numero'>{i}</span><b>{e}</b><small>{d}</small></div>" for i,(e,d) in enumerate(zip(ETAPAS,["Solicitud recibida","Antecedentes en revisión","Acuerdo adoptado","Acta en proceso de firma","Seguimiento cerrado"]),1)]) + "</div>", unsafe_allow_html=True)
     if perfil == "Hospital": st.markdown("<div class='solo-lectura'>✓ Estás en modo consulta. Puedes revisar toda la información, pero no modificarla.</div>", unsafe_allow_html=True)
     if perfil == "Administrador CTAR" and not almacenamiento_permanente():
-        st.warning("La base de datos permanente todavía no está configurada. Agrega SUPABASE_URL y SUPABASE_KEY en los Secrets de Streamlit.")
+        st.warning("Google Sheets todavía no está conectado. Mientras tanto, los datos se guardan solo temporalmente en Streamlit.")
 
     activas = sum(x["estado"] != "Proceso finaliza" for x in datos)
     m1,m2,m3,m4 = st.columns(4)

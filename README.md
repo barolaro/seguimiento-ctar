@@ -5,7 +5,7 @@ Plataforma Streamlit para registrar y consultar el avance de solicitudes enviada
 ## Perfiles
 
 - **Hospital:** acceso de solo lectura.
-- **Administrador CTAR:** registra solicitudes y actualiza estados. Clave inicial: `265727`.
+- **Administrador CTAR:** registra solicitudes y actualiza estados mediante una clave privada configurada en Streamlit.
 
 ## Ejecutar localmente
 
@@ -37,7 +37,7 @@ git push -u origin main
 4. En **Advanced settings > Secrets**, agrega:
 
 ```toml
-ADMIN_PASSWORD = "265727"
+ADMIN_PASSWORD = "CAMBIAR-POR-UNA-CLAVE-SEGURA"
 SUPABASE_URL = "https://TU-PROYECTO.supabase.co"
 SUPABASE_KEY = "TU-CLAVE-ANON-PUBLICA"
 ```

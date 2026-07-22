@@ -482,8 +482,89 @@ def ficha_admin_lateral(s, datos):
         st.rerun()
 
 
+@st.dialog("Sesión CTAR", width="large")
+def ficha_sesion_hospital(numero, temas):
+    orden_formalizacion = {nombre: i for i, nombre in enumerate(FORMALIZACIONES)}
+    formalizacion = max(
+        (t.get("formalizacion", "Borrador interno") for t in temas),
+        key=lambda x: orden_formalizacion.get(x, 0),
+        default="Borrador interno",
+    )
+    st.markdown("<div class='drawer-eye'>SESIÓN Y ACTA CTAR</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='drawer-title'>CTAR N.° {numero}</div>", unsafe_allow_html=True)
+    st.markdown(f"<span class='h-pill' style='background:#0B6DAA18;color:#0B6DAA'>● &nbsp;{formalizacion}</span>", unsafe_allow_html=True)
+    if formalizacion != "Formalizado":
+        st.warning("Documento en elaboración. Los contenidos pueden modificarse hasta la firma y formalización del acta.")
+
+    st.markdown("<div class='admin-section'>Temas incorporados</div>", unsafe_allow_html=True)
+    for tema in sorted(temas, key=lambda x: str(x.get("tema", ""))):
+        st.markdown(
+            f"<div class='session-topic'><b>{tema.get('tema','')}</b>"
+            f"<small>{tema.get('tipo_materia','Tema general CTAR')} · Responsable: {tema.get('servicio','CTAR')}</small>"
+            f"<span>{tema.get('motivo','')}</span></div>",
+            unsafe_allow_html=True,
+        )
+
+    documentos = {}
+    for tema in temas:
+        for documento in tema.get("documentos", []):
+            if isinstance(documento, dict) and documento.get("id"):
+                documentos[documento["id"]] = documento
+    st.markdown("<div class='admin-section'>Documentos de la sesión</div>", unsafe_allow_html=True)
+    if not documentos:
+        st.caption("No hay documentos publicados para esta sesión.")
+    for i, documento in enumerate(documentos.values()):
+        nombre = documento.get("nombre", "Documento")
+        try:
+            contenido = descargar_de_drive(documento["id"], documento.get("fuente", "drive"))
+            st.download_button(f"▧  {nombre}", contenido, file_name=nombre, mime=documento.get("mime_type"), key=f"session_doc_{numero}_{i}", use_container_width=True)
+        except Exception as error:
+            st.warning(f"No fue posible abrir {nombre}: {error}")
+
+
+def vista_sesiones_hospital(temas):
+    st.markdown("<div class='session-intro'><div><div class='h-eye'>ACTAS Y ACUERDOS</div><div class='h-title'>Sesiones CTAR</div><div class='h-sub'>Consulta los temas tratados y el nivel de formalización de cada acta.</div></div></div>", unsafe_allow_html=True)
+    if not temas:
+        st.info("Todavía no hay sesiones o actas autorizadas para consulta del Hospital.")
+        return
+
+    sesiones = {}
+    for tema in temas:
+        sesiones.setdefault(str(tema.get("ctar_numero", "Sin asignar")), []).append(tema)
+    buscar = st.text_input("Buscar sesión o tema", placeholder="Ej.: 149, hervidores, gradualidad...", key="buscar_sesion_hospital")
+    st.caption(f"{len(sesiones)} sesión(es) disponible(s)")
+    orden_formalizacion = {nombre: i for i, nombre in enumerate(FORMALIZACIONES)}
+    for numero, items in sorted(sesiones.items(), reverse=True):
+        texto = f"{numero} " + " ".join(str(x.get("tema", "")) for x in items)
+        if buscar.lower() not in texto.lower():
+            continue
+        formalizacion = max(
+            (x.get("formalizacion", "Borrador interno") for x in items),
+            key=lambda x: orden_formalizacion.get(x, 0),
+            default="Borrador interno",
+        )
+        ultima = max((str(x.get("ultima_actualizacion", "")) for x in items), default="")
+        resumen = " · ".join(str(x.get("tema", "")) for x in items[:2])
+        if len(items) > 2:
+            resumen += f" · y {len(items)-2} tema(s) más"
+        tarjeta, accion = st.columns([12, 1])
+        with tarjeta:
+            st.markdown(
+                f"<div class='session-card'><div><span class='session-number'>CTAR N.° {numero}</span>"
+                f"<h4>{len(items)} tema(s) incorporado(s)</h4><p>{resumen}</p><small>Última actualización: {ultima}</small></div>"
+                f"<span class='session-state'>{formalizacion}</span></div>",
+                unsafe_allow_html=True,
+            )
+        with accion:
+            st.write("")
+            if st.button("›", key=f"open_session_{numero}", help="Abrir sesión", use_container_width=True):
+                ficha_sesion_hospital(numero, items)
+
+
 def vista_hospital(datos):
-    datos = [d for d in datos if valor_booleano(d.get("publicar_hospital", True))]
+    visibles = [d for d in datos if valor_booleano(d.get("publicar_hospital", True))]
+    solicitudes = [d for d in visibles if d.get("clase_registro", "Solicitud / equipo") != "Tema de sesión"]
+    temas_sesion = [d for d in visibles if d.get("clase_registro", "Solicitud / equipo") == "Tema de sesión"]
     st.markdown("""
     <style>
     [data-testid="stSidebar"], [data-testid="stHeader"]{display:none!important}
@@ -503,6 +584,7 @@ def vista_hospital(datos):
     div[data-testid="stDialog"] div[role="dialog"]{position:fixed!important;right:0!important;top:0!important;height:100vh!important;max-height:100vh!important;width:590px!important;max-width:94vw!important;border-radius:0!important;margin:0!important;padding:22px 30px!important;overflow-y:auto!important}
     .drawer-eye{font-size:11px;font-weight:800;letter-spacing:.15em;color:#0872BC}.drawer-title{font-size:25px;color:#142B40;margin:12px 0 10px}.drawer-progress{display:grid;grid-template-columns:repeat(5,1fr);margin:28px 0 24px;border-bottom:1px solid #DCE5EC;padding-bottom:22px}.drawer-stage{position:relative;text-align:center}.drawer-stage:before{content:'';position:absolute;top:14px;left:-50%;width:100%;height:2px;background:#E0E7ED}.drawer-stage:first-child:before{display:none}.drawer-stage span{position:relative;z-index:1;display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#E8EDF1;color:#8090A0;font-weight:800}.drawer-stage.done span,.drawer-stage.done:before{background:#0D355D;color:white}.drawer-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px 28px;margin:8px 0 22px}.drawer-grid small,.drawer-update small,.drawer-section small{display:block;color:#8092A7;font-size:9px;letter-spacing:.04em;margin-bottom:6px}.drawer-grid b,.drawer-update b{display:block;color:#20364B;font-size:12px;line-height:1.45}.drawer-update{background:#EEF5FA;border-left:3px solid #0B78C2;border-radius:5px;padding:15px 17px;margin-bottom:24px}.drawer-update b{margin-bottom:13px}.drawer-update b:last-child{margin-bottom:0}.drawer-section{margin:18px 0;color:#40586D;font-size:12px}.drawer-section p{margin:0;line-height:1.5}
     .h-docstate{display:block;color:#8A6A16;font-size:9px;margin-top:4px}.h-footer{display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center;border-top:1px solid #DFE7EE;margin-top:24px;padding:15px 4px 2px;color:#8495A7;font-size:10px}.h-footer div:nth-child(2){text-align:center;color:#60758A}.h-footer div:last-child{text-align:right}
+    .session-nav{margin:18px 0 5px}.session-intro{padding:25px 4px 17px}.session-card{display:flex;justify-content:space-between;gap:20px;align-items:center;background:#fff;border:1px solid #D8E3EC;border-radius:13px;padding:17px 20px;margin:9px 0;box-shadow:0 4px 15px #123A5A0A}.session-number{font-size:10px;font-weight:800;letter-spacing:.09em;color:#0872BC}.session-card h4{margin:4px 0;color:#142B40;font-size:15px}.session-card p{margin:3px 0;color:#536B80;font-size:11px}.session-card small{color:#8797A7;font-size:9px}.session-state{background:#EAF3F9;color:#0B6DAA;border-radius:999px;padding:6px 10px;font-size:10px;font-weight:800;white-space:nowrap}.session-topic{border:1px solid #DFE7ED;border-radius:9px;padding:12px 14px;margin:8px 0}.session-topic b{display:block;color:#1B344B;font-size:12px}.session-topic small{display:block;color:#0872BC;font-size:9px;margin:4px 0}.session-topic span{display:block;color:#62768B;font-size:11px;line-height:1.45}
     @media(max-width:900px){.h-flow,.h-guides{grid-template-columns:1fr}.h-step{margin:5px 0}.h-step:after{display:none}.h-head{display:none}.h-row{grid-template-columns:1fr;padding:16px}.h-row>div{margin:2px 0}.h-count{display:none}.h-footer{grid-template-columns:1fr;text-align:center;gap:5px}.h-footer div:last-child{text-align:center}}
     </style>
     """, unsafe_allow_html=True)
@@ -514,6 +596,21 @@ def vista_hospital(datos):
         if st.button("Salir", use_container_width=True):
             st.session_state.perfil = None
             st.rerun()
+
+    st.markdown("<div class='session-nav'></div>", unsafe_allow_html=True)
+    seccion = st.segmented_control(
+        "Sección",
+        ["Solicitudes del Hospital", "Sesiones y actas CTAR"],
+        default="Solicitudes del Hospital",
+        label_visibility="collapsed",
+        use_container_width=True,
+    )
+    if seccion == "Sesiones y actas CTAR":
+        vista_sesiones_hospital(temas_sesion)
+        st.markdown(f"<div class='h-footer'><div>Seguimiento CTAR · Servicio de Salud Metropolitano Occidente</div><div>Desarrollado por <b>Bayron Retamal González</b></div><div>Última sincronización: {fecha_legible(date.today().isoformat())}</div></div>", unsafe_allow_html=True)
+        return
+
+    datos = solicitudes
 
     activas = sum(x.get("estado") != "Proceso finaliza" for x in datos)
     st.markdown(f"<div class='h-intro'><div><div class='h-eye'>CONTROL Y TRAZABILIDAD</div><div class='h-title'>Solicitudes al CTAR</div><div class='h-sub'>Consulta el avance de cada solicitud enviada por el Hospital, desde su ingreso hasta el cierre del proceso.</div></div><div class='h-count'><b>{activas}</b><span>solicitudes activas</span><small>{len(datos)} registradas en total</small></div></div>", unsafe_allow_html=True)
@@ -659,6 +756,38 @@ def main():
                         st.error(f"No fue posible guardar la importación: {error}")
                 if ic2.button("Cancelar importación", use_container_width=True):
                     del st.session_state["importacion_ctar"]
+                    st.rerun()
+
+        temas_administrados = [x for x in datos if x.get("clase_registro") == "Tema de sesión"]
+        if temas_administrados:
+            with st.expander("🗂️ Gestionar sesiones y actas CTAR", expanded=False):
+                numeros_sesion = sorted({str(x.get("ctar_numero", "Sin asignar")) for x in temas_administrados}, reverse=True)
+                sesion_gestionada = st.selectbox("Seleccionar sesión", numeros_sesion, key="admin_session_select")
+                items_sesion = [x for x in temas_administrados if str(x.get("ctar_numero", "Sin asignar")) == sesion_gestionada]
+                visibles_sesion = sum(valor_booleano(x.get("publicar_hospital", False)) for x in items_sesion)
+                st.caption(f"CTAR N.° {sesion_gestionada}: {len(items_sesion)} tema(s) · {visibles_sesion} visible(s) para el Hospital")
+                gs1, gs2 = st.columns(2)
+                estado_actual_sesion = items_sesion[0].get("formalizacion", "Borrador interno")
+                formalizacion_sesion = gs1.selectbox(
+                    "Estado del acta",
+                    FORMALIZACIONES,
+                    index=FORMALIZACIONES.index(estado_actual_sesion) if estado_actual_sesion in FORMALIZACIONES else 0,
+                    key="admin_session_status",
+                )
+                publicar_sesion = gs2.checkbox(
+                    "Visible para el Hospital",
+                    value=visibles_sesion == len(items_sesion),
+                    help="Publica la sesión completa con todos sus temas y documentos.",
+                    key="admin_session_publish",
+                )
+                if formalizacion_sesion != "Formalizado" and publicar_sesion:
+                    st.info("La sesión se mostrará al Hospital con una advertencia de que el documento aún está en elaboración.")
+                if st.button("Aplicar a toda la sesión", type="primary", use_container_width=True, key="admin_session_apply"):
+                    for item in items_sesion:
+                        item["formalizacion"] = formalizacion_sesion
+                        item["publicar_hospital"] = publicar_sesion
+                        item["ultima_actualizacion"] = f"{date.today().isoformat()} - Sesión CTAR N.° {sesion_gestionada} actualizada"
+                    guardar(datos)
                     st.rerun()
 
         with st.expander("➕ Registrar una nueva solicitud", expanded=False):

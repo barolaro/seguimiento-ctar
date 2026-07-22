@@ -208,7 +208,13 @@ def extraer_temas_acta(archivo):
 def valor_booleano(valor):
     if isinstance(valor, bool):
         return valor
-    return str(valor).strip().lower() in {"true", "verdadero", "1", "sí", "si"}
+    texto = str(valor).strip().lower()
+    if texto in {"true", "verdadero", "1", "1.0", "sí", "si", "yes"}:
+        return True
+    try:
+        return float(texto) != 0
+    except (TypeError, ValueError):
+        return False
 
 
 def normalizar_numero_ctar(valor):

@@ -1,10 +1,12 @@
 import hashlib
 import io
 import json
+import base64
 from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
+import requests
 import streamlit as st
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -96,7 +98,45 @@ def carpeta_drive_id():
         return ""
 
 
+def configuracion_apps_script():
+    try:
+        return (
+            str(st.secrets["APPS_SCRIPT_URL"]).strip(),
+            str(st.secrets["APPS_SCRIPT_TOKEN"]).strip(),
+        )
+    except (KeyError, FileNotFoundError):
+        return "", ""
+
+
+def llamar_apps_script(payload):
+    url, token = configuracion_apps_script()
+    if not url or not token:
+        raise RuntimeError("Falta configurar APPS_SCRIPT_URL y APPS_SCRIPT_TOKEN.")
+    payload["token"] = token
+    respuesta = requests.post(url, json=payload, timeout=90)
+    respuesta.raise_for_status()
+    resultado = respuesta.json()
+    if not resultado.get("ok"):
+        raise RuntimeError(resultado.get("error", "Google Apps Script rechazó la operación."))
+    return resultado
+
+
 def subir_a_drive(archivo):
+    script_url, _ = configuracion_apps_script()
+    if script_url:
+        resultado = llamar_apps_script({
+            "accion": "subir",
+            "nombre": Path(archivo.name).name,
+            "mime_type": archivo.type or "application/octet-stream",
+            "contenido": base64.b64encode(archivo.getvalue()).decode("ascii"),
+        })
+        return {
+            "id": resultado["id"],
+            "nombre": resultado.get("nombre", Path(archivo.name).name),
+            "mime_type": resultado.get("mime_type", archivo.type or "application/octet-stream"),
+            "url": resultado.get("url", ""),
+            "fuente": "apps_script",
+        }
     drive = cliente_drive()
     carpeta = carpeta_drive_id()
     if not drive or not carpeta:
@@ -121,7 +161,10 @@ def subir_a_drive(archivo):
     }
 
 
-def descargar_de_drive(file_id):
+def descargar_de_drive(file_id, fuente="drive"):
+    if fuente == "apps_script":
+        resultado = llamar_apps_script({"accion": "descargar", "id": file_id})
+        return base64.b64decode(resultado["contenido"])
     drive = cliente_drive()
     if not drive:
         raise RuntimeError("No fue posible conectar con Google Drive.")
@@ -240,7 +283,7 @@ def ficha_detalle(s):
             if isinstance(documento, dict) and documento.get("id"):
                 nombre = documento.get("nombre", "Documento")
                 try:
-                    contenido = descargar_de_drive(documento["id"])
+                    contenido = descargar_de_drive(documento["id"], documento.get("fuente", "drive"))
                     st.download_button(
                         f"📎 {nombre}", contenido, file_name=nombre,
                         mime=documento.get("mime_type"), key=f"d_{s['id']}_{i}"

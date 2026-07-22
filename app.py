@@ -226,6 +226,12 @@ def normalizar_numero_ctar(valor):
     return texto or "Sin asignar"
 
 
+def es_acta_firmada(documento):
+    nombre = documento.get("nombre", "") if isinstance(documento, dict) else str(documento)
+    nombre = nombre.lower()
+    return "acta" in nombre and ("firm" in nombre or "suscrit" in nombre)
+
+
 def leer_plantilla_solicitudes(archivo):
     columnas = [
         "Tipo de solicitud *", "Tema o equipo *", "Servicio solicitante *", "Número SIC",
@@ -460,12 +466,32 @@ def ficha_admin_lateral(s, datos):
     st.markdown("<div class='admin-section'>Avance del proceso</div>", unsafe_allow_html=True)
     if idx < len(ETAPAS) - 1:
         siguiente = ETAPAS[idx + 1]
-        if st.button(f"Avanzar a: {siguiente} →", key=f"drawer_next_{s['id']}", type="primary", use_container_width=True):
+        acta_para_cierre = None
+        if siguiente == "Proceso finaliza":
+            st.info("Para cerrar el seguimiento debes adjuntar el acta firmada. El documento quedará asociado a la solicitud.")
+            acta_para_cierre = st.file_uploader(
+                "Acta firmada *", type=["pdf", "docx"],
+                key=f"signed_act_{s['id']}", help="Utiliza un nombre que identifique claramente el acta firmada.",
+            )
+        etiqueta_avance = "Adjuntar acta y finalizar proceso" if siguiente == "Proceso finaliza" else f"Avanzar a: {siguiente} →"
+        if st.button(etiqueta_avance, key=f"drawer_next_{s['id']}", type="primary", use_container_width=True, disabled=siguiente == "Proceso finaliza" and acta_para_cierre is None):
+            documentos = list(s.get("documentos", []))
+            if siguiente == "Proceso finaliza":
+                try:
+                    documento_firmado = subir_a_drive(acta_para_cierre)
+                    documento_firmado["tipo_documento"] = "Acta firmada"
+                    documentos.append(documento_firmado)
+                except Exception as error:
+                    st.error(f"No fue posible guardar el acta firmada: {error}")
+                    st.stop()
             s.update({
                 "estado": siguiente,
-                "ultima_actualizacion": f"{date.today().isoformat()} - Estado actualizado a {siguiente}",
+                "ultima_actualizacion": f"{date.today().isoformat()} - " + ("Acta firmada incorporada y seguimiento finalizado" if siguiente == "Proceso finaliza" else f"Estado actualizado a {siguiente}"),
                 "proximo_paso": PROXIMOS[siguiente],
+                "documentos": documentos,
             })
+            if siguiente == "Proceso finaliza":
+                s["formalizacion"] = "Formalizado"
             guardar(datos)
             st.rerun()
     else:
@@ -508,6 +534,9 @@ def ficha_admin_lateral(s, datos):
         except Exception as error:
             st.error(f"No fue posible guardar los nuevos adjuntos: {error}")
             st.stop()
+        if nuevo == "Proceso finaliza" and not any(es_acta_firmada(d) or (isinstance(d, dict) and d.get("tipo_documento") == "Acta firmada") for d in documentos):
+            st.error("No es posible finalizar el proceso sin adjuntar un archivo identificado como acta firmada.")
+            st.stop()
         s.update({
             "tema": tema_editado, "servicio": servicio_editado, "sic": sic_editado,
             "inventario": inventario_editado, "fecha_ingreso": fecha_editada,
@@ -517,6 +546,8 @@ def ficha_admin_lateral(s, datos):
             "tipo_materia": tipo_editado, "formalizacion": formalizacion_editada,
             "publicar_hospital": publicar_editado, "prioridad": prioridad_editada,
         })
+        if nuevo == "Proceso finaliza":
+            s["formalizacion"] = "Formalizado"
         guardar(datos)
         st.rerun()
 

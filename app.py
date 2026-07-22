@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from supabase import Client, create_client
 
 BASE = Path(__file__).parent
 DATA_FILE = BASE / "data" / "solicitudes.json"
@@ -12,6 +13,13 @@ UPLOAD_DIR = BASE / "data" / "documentos"
 LOGO = BASE / "assets" / "logo_ssmoc.jpg"
 ETAPAS = ["Hospital envía", "CTAR revisa", "CTAR acuerda", "Acta se firma", "Proceso finaliza"]
 COLORES = {"Hospital envía": "#0B6DAA", "CTAR revisa": "#F2A900", "CTAR acuerda": "#7B4FA3", "Acta se firma": "#008C95", "Proceso finaliza": "#198754"}
+PROXIMOS = {
+    "Hospital envía": "CTAR revisará los antecedentes recibidos",
+    "CTAR revisa": "Adoptar acuerdo en sesión CTAR",
+    "CTAR acuerda": "Preparar el acta para revisión y firma",
+    "Acta se firma": "Completar las firmas pendientes",
+    "Proceso finaliza": "Sin acciones pendientes",
+}
 
 st.set_page_config(page_title="Seguimiento CTAR | SSMOC", page_icon="🏥", layout="wide", initial_sidebar_state="expanded")
 
@@ -46,7 +54,29 @@ def datos_iniciales():
     ]
 
 
+@st.cache_resource
+def cliente_supabase():
+    try:
+        url = st.secrets["SUPABASE_URL"]
+        key = st.secrets["SUPABASE_KEY"]
+        return create_client(url, key)
+    except (KeyError, FileNotFoundError):
+        return None
+
+
+def almacenamiento_permanente():
+    return cliente_supabase() is not None
+
+
 def cargar():
+    db = cliente_supabase()
+    if db:
+        try:
+            respuesta = db.table("solicitudes").select("data").order("updated_at", desc=True).execute()
+            return [fila["data"] for fila in respuesta.data]
+        except Exception as error:
+            st.error(f"No fue posible conectar con la base de datos: {error}")
+            return []
     DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
     if not DATA_FILE.exists():
         guardar(datos_iniciales())
@@ -57,8 +87,23 @@ def cargar():
 
 
 def guardar(datos):
+    db = cliente_supabase()
+    if db:
+        if datos:
+            filas = [{"id": item["id"], "data": item, "updated_at": datetime.now().isoformat()} for item in datos]
+            db.table("solicitudes").upsert(filas).execute()
+        return
     DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
     DATA_FILE.write_text(json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def eliminar_solicitud(solicitud_id):
+    db = cliente_supabase()
+    if db:
+        db.table("solicitudes").delete().eq("id", solicitud_id).execute()
+        return
+    datos = [item for item in cargar() if item["id"] != solicitud_id]
+    guardar(datos)
 
 
 def clave_admin():
@@ -131,6 +176,8 @@ def main():
     st.markdown(f"<div class='hero'><h1>Seguimiento de solicitudes CTAR</h1><p>Consulta clara y centralizada del avance de las solicitudes del Hospital.</p><span class='perfil'>{perfil}</span></div>", unsafe_allow_html=True)
     st.markdown("<div class='pasos'>" + "".join([f"<div class='paso'><span class='numero'>{i}</span><b>{e}</b><small>{d}</small></div>" for i,(e,d) in enumerate(zip(ETAPAS,["Solicitud recibida","Antecedentes en revisión","Acuerdo adoptado","Acta en proceso de firma","Seguimiento cerrado"]),1)]) + "</div>", unsafe_allow_html=True)
     if perfil == "Hospital": st.markdown("<div class='solo-lectura'>✓ Estás en modo consulta. Puedes revisar toda la información, pero no modificarla.</div>", unsafe_allow_html=True)
+    if perfil == "Administrador CTAR" and not almacenamiento_permanente():
+        st.warning("La base de datos permanente todavía no está configurada. Agrega SUPABASE_URL y SUPABASE_KEY en los Secrets de Streamlit.")
 
     activas = sum(x["estado"] != "Proceso finaliza" for x in datos)
     m1,m2,m3,m4 = st.columns(4)
@@ -163,9 +210,24 @@ def main():
         with st.expander(f"Ver ficha completa — {s['tema']}"):
             ficha_detalle(s)
             if perfil == "Administrador CTAR":
-                idx=ETAPAS.index(s["estado"]); nuevo=st.selectbox("Actualizar estado",ETAPAS,index=idx,key=f"est_{s['id']}"); actual=st.text_input("Última actualización",s["ultima_actualizacion"],key=f"act_{s['id']}"); prox=st.text_input("Próximo paso",s["proximo_paso"],key=f"prox_{s['id']}")
-                if st.button("Guardar cambios",key=f"save_{s['id']}",type="primary"):
+                idx=ETAPAS.index(s["estado"])
+                st.markdown("#### Gestión de la solicitud")
+                if idx < len(ETAPAS)-1:
+                    siguiente = ETAPAS[idx+1]
+                    if st.button(f"Avanzar a: {siguiente} →", key=f"next_{s['id']}", type="primary", use_container_width=True):
+                        s.update({"estado": siguiente, "ultima_actualizacion": f"{date.today().isoformat()} - Estado actualizado a {siguiente}", "proximo_paso": PROXIMOS[siguiente]})
+                        guardar(datos); st.success(f"La solicitud avanzó a {siguiente}."); st.rerun()
+                else:
+                    st.success("Esta solicitud ya se encuentra finalizada.")
+                nuevo=st.selectbox("Cambiar estado manualmente",ETAPAS,index=idx,key=f"est_{s['id']}")
+                actual=st.text_input("Última actualización",s["ultima_actualizacion"],key=f"act_{s['id']}")
+                prox=st.text_input("Próximo paso",s["proximo_paso"],key=f"prox_{s['id']}")
+                if st.button("Guardar cambios manuales",key=f"save_{s['id']}"):
                     s.update({"estado":nuevo,"ultima_actualizacion":actual,"proximo_paso":prox}); guardar(datos); st.success("Cambios guardados."); st.rerun()
+                st.divider()
+                confirmar = st.checkbox("Confirmo que deseo eliminar esta solicitud", key=f"confirm_{s['id']}")
+                if st.button("🗑 Eliminar solicitud", key=f"delete_{s['id']}", disabled=not confirmar):
+                    eliminar_solicitud(s["id"]); st.success("Solicitud eliminada correctamente."); st.rerun()
     if perfil == "Administrador CTAR" and datos:
         st.divider(); df=pd.DataFrame(datos); st.download_button("⬇ Descargar seguimiento en CSV",df.to_csv(index=False).encode("utf-8-sig"),"seguimiento_ctar.csv","text/csv")
 

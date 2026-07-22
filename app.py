@@ -219,11 +219,22 @@ def main():
                         guardar(datos); st.success(f"La solicitud avanzó a {siguiente}."); st.rerun()
                 else:
                     st.success("Esta solicitud ya se encuentra finalizada.")
+                st.markdown("##### Editar información ingresada")
+                ed1, ed2 = st.columns(2)
+                tema_editado = ed1.text_input("Tema o equipo", s["tema"], key=f"tema_edit_{s['id']}")
+                servicio_editado = ed2.text_input("Servicio solicitante", s["servicio"], key=f"serv_edit_{s['id']}")
+                ed3, ed4, ed5 = st.columns(3)
+                sic_editado = ed3.text_input("Número SIC", s["sic"], key=f"sic_edit_{s['id']}")
+                inventario_editado = ed4.text_input("Número de inventario", s["inventario"], key=f"inv_edit_{s['id']}")
+                fecha_editada = ed5.text_input("Fecha de ingreso", s["fecha_ingreso"], key=f"fecha_edit_{s['id']}")
+                motivo_editado = st.text_area("Motivo de la solicitud", s["motivo"], key=f"motivo_edit_{s['id']}")
+                observaciones_editadas = st.text_area("Observaciones", s.get("observaciones", ""), key=f"obs_edit_{s['id']}")
                 nuevo=st.selectbox("Cambiar estado manualmente",ETAPAS,index=idx,key=f"est_{s['id']}")
                 actual=st.text_input("Última actualización",s["ultima_actualizacion"],key=f"act_{s['id']}")
                 prox=st.text_input("Próximo paso",s["proximo_paso"],key=f"prox_{s['id']}")
-                if st.button("Guardar cambios manuales",key=f"save_{s['id']}"):
-                    s.update({"estado":nuevo,"ultima_actualizacion":actual,"proximo_paso":prox}); guardar(datos); st.success("Cambios guardados."); st.rerun()
+                if st.button("Guardar todos los cambios",key=f"save_{s['id']}"):
+                    s.update({"tema":tema_editado,"servicio":servicio_editado,"sic":sic_editado,"inventario":inventario_editado,"fecha_ingreso":fecha_editada,"motivo":motivo_editado,"observaciones":observaciones_editadas,"estado":nuevo,"ultima_actualizacion":actual,"proximo_paso":prox})
+                    guardar(datos); st.success("Cambios guardados correctamente."); st.rerun()
                 st.divider()
                 confirmar = st.checkbox("Confirmo que deseo eliminar esta solicitud", key=f"confirm_{s['id']}")
                 if st.button("🗑 Eliminar solicitud", key=f"delete_{s['id']}", disabled=not confirmar):

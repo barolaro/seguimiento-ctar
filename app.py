@@ -301,6 +301,47 @@ def fecha_legible(valor):
         return str(valor)
 
 
+@st.dialog("Ficha de seguimiento", width="large")
+def ficha_hospital_lateral(item):
+    estado_actual = item.get("estado", ETAPAS[0])
+    indice = ETAPAS.index(estado_actual) if estado_actual in ETAPAS else 0
+    color = COLORES.get(estado_actual, "#0B6DAA")
+    st.markdown("<div class='drawer-eye'>FICHA DE SEGUIMIENTO</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='drawer-title'>{item.get('tema','')}</div><span class='h-pill' style='background:{color}18;color:{color}'>● &nbsp;{estado_actual}</span>", unsafe_allow_html=True)
+    progreso = "".join(
+        f"<div class='drawer-stage {'done' if i <= indice else ''}'><span>{i+1}</span></div>"
+        for i in range(len(ETAPAS))
+    )
+    st.markdown(f"<div class='drawer-progress'>{progreso}</div>", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div class='drawer-grid'>
+      <div><small>HOSPITAL</small><b>{item.get('hospital','')}</b></div>
+      <div><small>SERVICIO SOLICITANTE</small><b>{item.get('servicio','')}</b></div>
+      <div><small>NÚMERO SIC</small><b>{item.get('sic','')}</b></div>
+      <div><small>NÚMERO DE INVENTARIO</small><b>{item.get('inventario','')}</b></div>
+      <div><small>FECHA DE INGRESO</small><b>{fecha_legible(item.get('fecha_ingreso',''))}</b></div>
+      <div><small>MOTIVO DE LA SOLICITUD</small><b>{item.get('motivo','')}</b></div>
+    </div>
+    <div class='drawer-update'><small>ÚLTIMA ACTUALIZACIÓN</small><b>{item.get('ultima_actualizacion','')}</b><small>PRÓXIMO PASO</small><b>{item.get('proximo_paso','')}</b></div>
+    <div class='drawer-section'><small>OBSERVACIONES</small><p>{item.get('observaciones') or 'Sin observaciones'}</p></div>
+    <div class='drawer-section'><small>DOCUMENTOS Y CORREOS ASOCIADOS</small></div>
+    """, unsafe_allow_html=True)
+    if not item.get("documentos"):
+        st.caption("No hay documentos asociados.")
+    for i, documento in enumerate(item.get("documentos", [])):
+        if isinstance(documento, dict) and documento.get("id"):
+            nombre = documento.get("nombre", "Documento")
+            try:
+                contenido = descargar_de_drive(documento["id"], documento.get("fuente", "drive"))
+                st.download_button(f"▧  {nombre}", contenido, file_name=nombre,
+                    mime=documento.get("mime_type"), key=f"drawer_doc_{item.get('id')}_{i}",
+                    use_container_width=True)
+            except Exception as error:
+                st.warning(f"No fue posible abrir {nombre}: {error}")
+        else:
+            st.caption("Adjunto antiguo no disponible; debe cargarse nuevamente.")
+
+
 def vista_hospital(datos):
     st.markdown("""
     <style>
@@ -318,6 +359,8 @@ def vista_hospital(datos):
     .h-guides{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}.h-guide{background:#fff;border:1px solid #DCE6EE;border-radius:11px;padding:13px 16px;color:#607488;font-size:11px}.h-guide b{display:block;color:#18344D;font-size:13px;margin-bottom:2px}
     .h-box{background:#fff;border:1px solid #D8E3EC;border-radius:14px;padding:20px 22px;box-shadow:0 5px 18px #123A5A0A}.h-box-title{font-size:17px;color:#142C43;margin-bottom:2px}.h-muted{color:#8293A6;font-size:11px}
     .h-head,.h-row{display:grid;grid-template-columns:2.25fr 1.25fr 1.05fr 1.35fr 2fr 2.2fr .35fr;gap:12px;align-items:center}.h-head{background:#F1F5F8;color:#60758B;font-size:9px;font-weight:800;letter-spacing:.05em;padding:10px 12px;margin:12px -22px 0}.h-row{padding:13px 0;border-bottom:1px solid #E5EBF0;font-size:11px;color:#1B344B}.h-row:last-child{border-bottom:0}.h-topic b{display:block;font-size:12px;color:#102A43}.h-topic small,.h-service small{display:block;color:#8394A7;margin-top:2px}.h-pill{display:inline-block;padding:5px 9px;border-radius:999px;font-weight:700;font-size:10px;white-space:nowrap}.h-arrow{width:28px;height:28px;border-radius:50%;background:#EDF5FA;display:grid;place-items:center;color:#0B6DAA;font-size:17px}
+    div[data-testid="stDialog"] div[role="dialog"]{position:fixed!important;right:0!important;top:0!important;height:100vh!important;max-height:100vh!important;width:590px!important;max-width:94vw!important;border-radius:0!important;margin:0!important;padding:22px 30px!important;overflow-y:auto!important}
+    .drawer-eye{font-size:11px;font-weight:800;letter-spacing:.15em;color:#0872BC}.drawer-title{font-size:25px;color:#142B40;margin:12px 0 10px}.drawer-progress{display:grid;grid-template-columns:repeat(5,1fr);margin:28px 0 24px;border-bottom:1px solid #DCE5EC;padding-bottom:22px}.drawer-stage{position:relative;text-align:center}.drawer-stage:before{content:'';position:absolute;top:14px;left:-50%;width:100%;height:2px;background:#E0E7ED}.drawer-stage:first-child:before{display:none}.drawer-stage span{position:relative;z-index:1;display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#E8EDF1;color:#8090A0;font-weight:800}.drawer-stage.done span,.drawer-stage.done:before{background:#0D355D;color:white}.drawer-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px 28px;margin:8px 0 22px}.drawer-grid small,.drawer-update small,.drawer-section small{display:block;color:#8092A7;font-size:9px;letter-spacing:.04em;margin-bottom:6px}.drawer-grid b,.drawer-update b{display:block;color:#20364B;font-size:12px;line-height:1.45}.drawer-update{background:#EEF5FA;border-left:3px solid #0B78C2;border-radius:5px;padding:15px 17px;margin-bottom:24px}.drawer-update b{margin-bottom:13px}.drawer-update b:last-child{margin-bottom:0}.drawer-section{margin:18px 0;color:#40586D;font-size:12px}.drawer-section p{margin:0;line-height:1.5}
     @media(max-width:900px){.h-flow,.h-guides{grid-template-columns:1fr}.h-step{margin:5px 0}.h-step:after{display:none}.h-head{display:none}.h-row{grid-template-columns:1fr;padding:16px}.h-row>div{margin:2px 0}.h-count{display:none}}
     </style>
     """, unsafe_allow_html=True)
@@ -363,10 +406,13 @@ def vista_hospital(datos):
         st.markdown("<div class='h-head'><div>TEMA O EQUIPO</div><div>SERVICIO</div><div>FECHA DE INGRESO</div><div>ESTADO ACTUAL</div><div>ÚLTIMA ACTUALIZACIÓN</div><div>PRÓXIMO PASO</div><div></div></div>", unsafe_allow_html=True)
         for item in filtrados:
             color = COLORES.get(item.get("estado"), "#0B6DAA")
-            html = f"<div class='h-row'><div class='h-topic'><b>{item.get('tema','')}</b><small>SIC {item.get('sic','')} · Inv. {item.get('inventario','')}</small></div><div class='h-service'>{item.get('servicio','')}<small>{item.get('hospital','')}</small></div><div>{fecha_legible(item.get('fecha_ingreso',''))}</div><div><span class='h-pill' style='background:{color}18;color:{color}'>● &nbsp;{item.get('estado','')}</span></div><div>{item.get('ultima_actualizacion','')}</div><div>{item.get('proximo_paso','')}</div><div class='h-arrow'>›</div></div>"
-            st.markdown(html, unsafe_allow_html=True)
-            with st.expander(f"Ver ficha completa — {item.get('tema','')}"):
-                ficha_detalle(item)
+            fila, accion = st.columns([20, 1])
+            with fila:
+                html = f"<div class='h-row' style='grid-template-columns:2.25fr 1.25fr 1.05fr 1.35fr 2fr 2.2fr'><div class='h-topic'><b>{item.get('tema','')}</b><small>SIC {item.get('sic','')} · Inv. {item.get('inventario','')}</small></div><div class='h-service'>{item.get('servicio','')}<small>{item.get('hospital','')}</small></div><div>{fecha_legible(item.get('fecha_ingreso',''))}</div><div><span class='h-pill' style='background:{color}18;color:{color}'>● &nbsp;{item.get('estado','')}</span></div><div>{item.get('ultima_actualizacion','')}</div><div>{item.get('proximo_paso','')}</div></div>"
+                st.markdown(html, unsafe_allow_html=True)
+            with accion:
+                if st.button("›", key=f"open_hospital_{item.get('id')}", help="Abrir ficha"):
+                    ficha_hospital_lateral(item)
 
 
 

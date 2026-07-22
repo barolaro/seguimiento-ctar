@@ -110,7 +110,7 @@ def clave_admin():
     try:
         return str(st.secrets["ADMIN_PASSWORD"])
     except (KeyError, FileNotFoundError):
-        return "265727"
+        return ""
 
 
 def login():
@@ -136,7 +136,9 @@ def login():
             with st.form("login_admin"):
                 clave = st.text_input("Clave de acceso", type="password")
                 if st.form_submit_button("Ingresar a administración", use_container_width=True):
-                    if hashlib.sha256(clave.encode()).hexdigest() == hashlib.sha256(clave_admin().encode()).hexdigest():
+                    if not clave_admin():
+                        st.error("La clave administrativa no está configurada en los Secrets de Streamlit.")
+                    elif hashlib.sha256(clave.encode()).hexdigest() == hashlib.sha256(clave_admin().encode()).hexdigest():
                         st.session_state.perfil = "Administrador CTAR"; st.rerun()
                     else: st.error("La clave ingresada no es correcta.")
     st.stop()

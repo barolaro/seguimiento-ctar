@@ -39,7 +39,7 @@ git push -u origin main
 ```toml
 ADMIN_PASSWORD = "CAMBIAR-POR-UNA-CLAVE-SEGURA"
 SUPABASE_URL = "https://TU-PROYECTO.supabase.co"
-SUPABASE_KEY = "TU-CLAVE-ANON-PUBLICA"
+SUPABASE_KEY = "TU-CLAVE-SERVICE-ROLE-PRIVADA"
 ```
 
 5. Presiona **Deploy**.
@@ -48,8 +48,10 @@ SUPABASE_KEY = "TU-CLAVE-ANON-PUBLICA"
 
 1. Crea un proyecto gratuito en https://supabase.com.
 2. Abre **SQL Editor** y ejecuta el contenido de `supabase_setup.sql`.
-3. En **Project Settings > API**, copia la URL del proyecto y la clave pública `anon`.
+3. En **Project Settings > API**, copia la URL del proyecto y la clave privada `service_role`.
 4. Agrégalas a los Secrets de Streamlit junto con la clave del Administrador.
+
+La clave `service_role` debe guardarse solamente en los Secrets privados de Streamlit y nunca en GitHub.
 
 Con esta configuración, las solicitudes permanecen guardadas aunque Streamlit se duerma, reinicie o vuelva a desplegarse. Si no se configuran esas dos variables, la aplicación utiliza temporalmente `data/solicitudes.json`.
 

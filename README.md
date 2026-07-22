@@ -38,22 +38,28 @@ git push -u origin main
 
 ```toml
 ADMIN_PASSWORD = "CAMBIAR-POR-UNA-CLAVE-SEGURA"
-SUPABASE_URL = "https://TU-PROYECTO.supabase.co"
-SUPABASE_KEY = "TU-CLAVE-SERVICE-ROLE-PRIVADA"
+
+[connections.gsheets]
+spreadsheet = "URL-DE-TU-GOOGLE-SHEET"
+worksheet = "solicitudes"
+type = "service_account"
+# Completar debajo con los datos del archivo JSON de Google Cloud.
 ```
 
 5. Presiona **Deploy**.
 
-## Base de datos permanente con Supabase
+## Almacenamiento permanente con Google Sheets
 
-1. Crea un proyecto gratuito en https://supabase.com.
-2. Abre **SQL Editor** y ejecuta el contenido de `supabase_setup.sql`.
-3. En **Project Settings > API**, copia la URL del proyecto y la clave privada `service_role`.
-4. Agrégalas a los Secrets de Streamlit junto con la clave del Administrador.
+1. Crea una planilla privada de Google Sheets.
+2. Cambia el nombre de la primera pestaña a `solicitudes`.
+3. En Google Cloud habilita **Google Sheets API** y **Google Drive API**.
+4. Crea una cuenta de servicio y descarga su archivo de credenciales JSON.
+5. Comparte la planilla con el correo `client_email` de esa cuenta como **Editor**.
+6. Copia en los Secrets de Streamlit la configuración indicada en `.streamlit/secrets.toml.example`, reemplazando los valores de ejemplo por los del JSON.
 
-La clave `service_role` debe guardarse solamente en los Secrets privados de Streamlit y nunca en GitHub.
+Las credenciales deben guardarse solamente en los Secrets privados de Streamlit y nunca en GitHub.
 
-Con esta configuración, las solicitudes permanecen guardadas aunque Streamlit se duerma, reinicie o vuelva a desplegarse. Si no se configuran esas dos variables, la aplicación utiliza temporalmente `data/solicitudes.json`.
+Con esta configuración, las solicitudes permanecen guardadas aunque Streamlit se duerma, reinicie o vuelva a desplegarse. Si Google Sheets no está configurado, la aplicación utiliza temporalmente `data/solicitudes.json`.
 
 El Administrador puede avanzar cada solicitud a la etapa siguiente, realizar un cambio manual de estado y eliminar registros con confirmación.
 

@@ -22,6 +22,7 @@ PLANTILLA_SOLICITUDES = BASE / "assets" / "plantilla_solicitudes_ctar.b64"
 ETAPAS = ["Hospital envía", "CTAR revisa", "CTAR acuerda", "Acta se firma", "Proceso finaliza"]
 TIPOS_MATERIA = ["Baja", "Reposición", "Adquisición / gradualidad", "Especificaciones técnicas", "Evaluación", "Informativo", "Administrativo", "Tema general CTAR"]
 FORMALIZACIONES = ["Borrador interno", "En revisión CTAR", "Acuerdo adoptado", "Acta en firma", "Formalizado"]
+PRIORIDADES = ["Alta", "Media", "Baja", "No informada"]
 COLORES = {"Hospital envía": "#0B6DAA", "CTAR revisa": "#F2A900", "CTAR acuerda": "#7B4FA3", "Acta se firma": "#008C95", "Proceso finaliza": "#198754"}
 PROXIMOS = {
     "Hospital envía": "CTAR revisará los antecedentes recibidos",
@@ -279,6 +280,7 @@ def cargar():
                 registro.setdefault("tipo_materia", "Tema general CTAR")
                 registro.setdefault("formalizacion", "En revisión CTAR")
                 registro.setdefault("publicar_hospital", True)
+                registro["prioridad"] = str(registro.get("prioridad", "")).strip() or "No informada"
             return registros
         except Exception as error:
             st.error(f"No fue posible leer la planilla de Google Sheets: {error}")
@@ -295,7 +297,7 @@ def cargar():
 def guardar(datos):
     conexion = cliente_gsheets()
     if conexion:
-        columnas = ["id", "tema", "hospital", "servicio", "sic", "inventario", "motivo", "fecha_ingreso", "estado", "ultima_actualizacion", "proximo_paso", "observaciones", "documentos", "clase_registro", "ctar_numero", "tipo_materia", "formalizacion", "publicar_hospital"]
+        columnas = ["id", "tema", "hospital", "servicio", "sic", "inventario", "motivo", "fecha_ingreso", "estado", "ultima_actualizacion", "proximo_paso", "observaciones", "documentos", "clase_registro", "ctar_numero", "tipo_materia", "formalizacion", "publicar_hospital", "prioridad"]
         filas = []
         for item in datos:
             fila = item.copy()
@@ -413,6 +415,7 @@ def ficha_hospital_lateral(item):
       <div><small>NÚMERO SIC</small><b>{item.get('sic','')}</b></div>
       <div><small>NÚMERO DE INVENTARIO</small><b>{item.get('inventario','')}</b></div>
       <div><small>FECHA DE INGRESO</small><b>{fecha_legible(item.get('fecha_ingreso',''))}</b></div>
+      <div><small>PRIORIDAD</small><b>{item.get('prioridad','No informada')}</b></div>
       <div><small>MOTIVO DE LA SOLICITUD</small><b>{item.get('motivo','')}</b></div>
     </div>
     <div class='drawer-update'><small>ÚLTIMA ACTUALIZACIÓN</small><b>{item.get('ultima_actualizacion','')}</b><small>PRÓXIMO PASO</small><b>{item.get('proximo_paso','')}</b></div>
@@ -445,7 +448,7 @@ def ficha_admin_lateral(s, datos):
     st.markdown(
         f"<span class='estado' style='background:{color}'>{estado}</span> "
         f"<span class='estado' style='background:#60758A'>{s.get('formalizacion','En revisión CTAR')}</span>"
-        f"<div class='admin-meta'>CTAR N.° {s.get('ctar_numero','Sin asignar')} · {s.get('tipo_materia','Tema general CTAR')} · {s.get('servicio','')}</div>",
+        f"<div class='admin-meta'>CTAR N.° {s.get('ctar_numero','Sin asignar')} · {s.get('tipo_materia','Tema general CTAR')} · Prioridad {s.get('prioridad','No informada')} · {s.get('servicio','')}</div>",
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -483,7 +486,10 @@ def ficha_admin_lateral(s, datos):
         tipo_actual = s.get("tipo_materia", "Tema general CTAR")
         tipo_editado = mg2.selectbox("Tipo de materia", TIPOS_MATERIA, index=TIPOS_MATERIA.index(tipo_actual) if tipo_actual in TIPOS_MATERIA else len(TIPOS_MATERIA)-1)
         form_actual = s.get("formalizacion", "En revisión CTAR")
-        formalizacion_editada = st.selectbox("Nivel de formalización", FORMALIZACIONES, index=FORMALIZACIONES.index(form_actual) if form_actual in FORMALIZACIONES else 1)
+        dg1, dg2 = st.columns(2)
+        formalizacion_editada = dg1.selectbox("Nivel de formalización", FORMALIZACIONES, index=FORMALIZACIONES.index(form_actual) if form_actual in FORMALIZACIONES else 1)
+        prioridad_actual = s.get("prioridad", "No informada")
+        prioridad_editada = dg2.selectbox("Prioridad", PRIORIDADES, index=PRIORIDADES.index(prioridad_actual) if prioridad_actual in PRIORIDADES else 3)
         publicar_editado = st.checkbox("Visible para el Hospital", value=valor_booleano(s.get("publicar_hospital", True)))
         nuevo = st.selectbox("Estado del proceso", ETAPAS, index=idx)
         actual = st.text_input("Última actualización", s.get("ultima_actualizacion", ""))
@@ -509,7 +515,7 @@ def ficha_admin_lateral(s, datos):
             "estado": nuevo, "ultima_actualizacion": actual, "proximo_paso": prox,
             "documentos": documentos, "ctar_numero": ctar_editado,
             "tipo_materia": tipo_editado, "formalizacion": formalizacion_editada,
-            "publicar_hospital": publicar_editado,
+            "publicar_hospital": publicar_editado, "prioridad": prioridad_editada,
         })
         guardar(datos)
         st.rerun()
@@ -700,7 +706,7 @@ def vista_hospital(datos):
             color = COLORES.get(item.get("estado"), "#0B6DAA")
             fila, accion = st.columns([20, 1])
             with fila:
-                html = f"<div class='h-row' style='grid-template-columns:2.25fr 1.25fr 1.05fr 1.35fr 2fr 2.2fr'><div class='h-topic'><b>{item.get('tema','')}</b><small>CTAR {item.get('ctar_numero','S/A')} · {item.get('tipo_materia','')}</small></div><div class='h-service'>{item.get('servicio','')}<small>SIC {item.get('sic','')} · Inv. {item.get('inventario','')}</small></div><div>{fecha_legible(item.get('fecha_ingreso',''))}</div><div><span class='h-pill' style='background:{color}18;color:{color}'>● &nbsp;{item.get('estado','')}</span><span class='h-docstate'>{item.get('formalizacion','')}</span></div><div>{item.get('ultima_actualizacion','')}</div><div>{item.get('proximo_paso','')}</div></div>"
+                html = f"<div class='h-row' style='grid-template-columns:2.25fr 1.25fr 1.05fr 1.35fr 2fr 2.2fr'><div class='h-topic'><b>{item.get('tema','')}</b><small>{item.get('tipo_materia','')} · Prioridad {item.get('prioridad','No informada')}</small></div><div class='h-service'>{item.get('servicio','')}<small>SIC {item.get('sic','')} · Inv. {item.get('inventario','')}</small></div><div>{fecha_legible(item.get('fecha_ingreso',''))}</div><div><span class='h-pill' style='background:{color}18;color:{color}'>● &nbsp;{item.get('estado','')}</span><span class='h-docstate'>{item.get('formalizacion','')}</span></div><div>{item.get('ultima_actualizacion','')}</div><div>{item.get('proximo_paso','')}</div></div>"
                 st.markdown(html, unsafe_allow_html=True)
             with accion:
                 if st.button("›", key=f"open_hospital_{item.get('id')}", help="Abrir ficha"):
@@ -796,6 +802,7 @@ def main():
                                 "documentos": [documento_acta], "clase_registro": "Tema de sesión",
                                 "ctar_numero": str(importacion["numero"]), "tipo_materia": str(fila["Tipo de materia"]),
                                 "formalizacion": "Borrador interno", "publicar_hospital": bool(fila["Visible Hospital"]),
+                                "prioridad": "No informada",
                             })
                             existentes.add(clave); creados += 1
                         guardar(datos)
@@ -930,6 +937,7 @@ def main():
                             "documentos": [], "clase_registro": "Solicitud / equipo", "ctar_numero": "Sin asignar",
                             "tipo_materia": str(fila["Tipo"]), "formalizacion": "En revisión CTAR",
                             "publicar_hospital": "TRUE" if valor_booleano(fila["Visible Hospital"]) else "FALSE",
+                            "prioridad": str(fila["Prioridad"]),
                         })
                         existentes.add(clave)
                         creadas += 1
@@ -947,10 +955,11 @@ def main():
             with st.form("nueva"):
                 a,b = st.columns(2); tema=a.text_input("Tema o equipo *"); servicio=b.text_input("Servicio solicitante *")
                 c,d,e = st.columns(3); sic=c.text_input("Número SIC"); inventario=d.text_input("Número de inventario"); ingreso=e.date_input("Fecha de ingreso", date.today())
-                g,h,i = st.columns(3)
+                g,h,i,j = st.columns(4)
                 ctar_numero = g.text_input("Sesión CTAR", placeholder="Ej.: 149")
                 tipo_materia = h.selectbox("Tipo de materia", TIPOS_MATERIA)
                 formalizacion = i.selectbox("Nivel de formalización", FORMALIZACIONES, index=1)
+                prioridad = j.selectbox("Prioridad", PRIORIDADES[:3], index=1)
                 publicar = st.checkbox("Visible para el Hospital", value=False, help="Actívalo solo cuando corresponda compartir el antecedente. Los borradores se mostrarán con una advertencia.")
                 motivo=st.text_area("Motivo de la solicitud *"); obs=st.text_area("Observaciones")
                 docs=st.file_uploader("Documentos o correos asociados", accept_multiple_files=True)
@@ -964,7 +973,7 @@ def main():
                         except Exception as error:
                             st.error(f"No fue posible guardar los adjuntos en Google Drive: {error}")
                             st.stop()
-                        datos.insert(0,{"id":f"CTAR-{datetime.now().strftime('%Y%m%d%H%M%S')}","tema":tema,"hospital":"Hospital Dr. Félix Bulnes","servicio":servicio,"sic":sic or "Por asignar","inventario":inventario or "Por confirmar","motivo":motivo,"fecha_ingreso":ingreso.isoformat(),"estado":ETAPAS[0],"ultima_actualizacion":f"{date.today().isoformat()} - Solicitud registrada","proximo_paso":"CTAR revisará los antecedentes recibidos","observaciones":obs,"documentos":doc_paths,"clase_registro":"Solicitud / equipo","ctar_numero":ctar_numero or "Sin asignar","tipo_materia":tipo_materia,"formalizacion":formalizacion,"publicar_hospital":publicar})
+                        datos.insert(0,{"id":f"CTAR-{datetime.now().strftime('%Y%m%d%H%M%S')}","tema":tema,"hospital":"Hospital Dr. Félix Bulnes","servicio":servicio,"sic":sic or "Por asignar","inventario":inventario or "Por confirmar","motivo":motivo,"fecha_ingreso":ingreso.isoformat(),"estado":ETAPAS[0],"ultima_actualizacion":f"{date.today().isoformat()} - Solicitud registrada","proximo_paso":"CTAR revisará los antecedentes recibidos","observaciones":obs,"documentos":doc_paths,"clase_registro":"Solicitud / equipo","ctar_numero":ctar_numero or "Sin asignar","tipo_materia":tipo_materia,"formalizacion":formalizacion,"publicar_hospital":publicar,"prioridad":prioridad})
                         guardar(datos); st.success("Solicitud registrada correctamente."); st.rerun()
 
     st.subheader("Solicitudes registradas")
@@ -976,7 +985,7 @@ def main():
         color=COLORES[s["estado"]]
         tarjeta, abrir = st.columns([12, 1])
         with tarjeta:
-            st.markdown(f"<div class='ficha'><h4>{s['tema']}</h4><div class='meta'>CTAR {s.get('ctar_numero','Sin asignar')} · {s.get('tipo_materia','Tema general CTAR')} · {s['servicio']} · SIC {s['sic']} · Ingreso {s['fecha_ingreso']}</div><span class='estado' style='background:{color}'>{s['estado']}</span> <span class='estado' style='background:#60758A'>{s.get('formalizacion','En revisión CTAR')}</span><div class='proximo'><b>Próximo paso:</b> {s['proximo_paso']}</div></div>",unsafe_allow_html=True)
+            st.markdown(f"<div class='ficha'><h4>{s['tema']}</h4><div class='meta'>CTAR {s.get('ctar_numero','Sin asignar')} · {s.get('tipo_materia','Tema general CTAR')} · Prioridad {s.get('prioridad','No informada')} · {s['servicio']} · SIC {s['sic']} · Ingreso {s['fecha_ingreso']}</div><span class='estado' style='background:{color}'>{s['estado']}</span> <span class='estado' style='background:#60758A'>{s.get('formalizacion','En revisión CTAR')}</span><div class='proximo'><b>Próximo paso:</b> {s['proximo_paso']}</div></div>",unsafe_allow_html=True)
         with abrir:
             st.write("")
             if st.button("›", key=f"open_admin_{s['id']}", help="Abrir gestión lateral", use_container_width=True):

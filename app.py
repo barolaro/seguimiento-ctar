@@ -294,8 +294,88 @@ def ficha_detalle(s):
                 st.caption("⚠️ Adjunto antiguo no disponible. Debe cargarse nuevamente para guardarlo en Drive.")
 
 
+def fecha_legible(valor):
+    try:
+        return datetime.strptime(str(valor)[:10], "%Y-%m-%d").strftime("%d-%m-%Y")
+    except ValueError:
+        return str(valor)
+
+
+def vista_hospital(datos):
+    st.markdown("""
+    <style>
+    [data-testid="stSidebar"], [data-testid="stHeader"]{display:none!important}
+    .block-container{max-width:1480px;padding:1rem 2rem 2.5rem!important}
+    .h-top{display:flex;align-items:center;gap:13px;border-bottom:1px solid #E1E8EF;padding:0 0 14px}
+    .h-logo{width:42px;height:42px;border-radius:11px;background:#0C3157;color:white;display:grid;place-items:center;font:800 22px Archivo,sans-serif}
+    .h-brand b{display:block;color:#13283C;font-size:16px}.h-brand span{color:#6A7C90;font-size:12px}
+    .h-live{margin-left:auto;color:#607286;font-size:12px}.h-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#14A46F;margin-right:7px}
+    .h-intro{display:flex;justify-content:space-between;align-items:end;padding:28px 4px 18px}
+    .h-eye{font-size:11px;font-weight:800;letter-spacing:.14em;color:#0872BC}.h-title{font-size:31px;color:#102A43;margin:7px 0 4px}.h-sub{color:#62768B;font-size:14px}
+    .h-count{text-align:center;color:#17334F}.h-count b{display:block;font-size:27px;color:#0B3157}.h-count small{color:#8293A6}
+    .h-flow{display:grid;grid-template-columns:repeat(5,1fr);background:#fff;border:1px solid #D9E4ED;border-radius:14px;padding:20px 22px;margin-bottom:14px;box-shadow:0 5px 18px #123A5A0A}
+    .h-step{position:relative;padding-left:40px}.h-step:not(:last-child):after{content:'→';position:absolute;right:10px;top:9px;color:#9AAFC1}.h-n{position:absolute;left:0;top:0;width:30px;height:30px;border-radius:50%;background:#EAF3F9;color:#0872BC;display:grid;place-items:center;font-weight:800}.h-step b{display:block;font-size:13px;color:#142B40}.h-step small{color:#8293A6;font-size:10px}
+    .h-guides{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}.h-guide{background:#fff;border:1px solid #DCE6EE;border-radius:11px;padding:13px 16px;color:#607488;font-size:11px}.h-guide b{display:block;color:#18344D;font-size:13px;margin-bottom:2px}
+    .h-box{background:#fff;border:1px solid #D8E3EC;border-radius:14px;padding:20px 22px;box-shadow:0 5px 18px #123A5A0A}.h-box-title{font-size:17px;color:#142C43;margin-bottom:2px}.h-muted{color:#8293A6;font-size:11px}
+    .h-head,.h-row{display:grid;grid-template-columns:2.25fr 1.25fr 1.05fr 1.35fr 2fr 2.2fr .35fr;gap:12px;align-items:center}.h-head{background:#F1F5F8;color:#60758B;font-size:9px;font-weight:800;letter-spacing:.05em;padding:10px 12px;margin:12px -22px 0}.h-row{padding:13px 0;border-bottom:1px solid #E5EBF0;font-size:11px;color:#1B344B}.h-row:last-child{border-bottom:0}.h-topic b{display:block;font-size:12px;color:#102A43}.h-topic small,.h-service small{display:block;color:#8394A7;margin-top:2px}.h-pill{display:inline-block;padding:5px 9px;border-radius:999px;font-weight:700;font-size:10px;white-space:nowrap}.h-arrow{width:28px;height:28px;border-radius:50%;background:#EDF5FA;display:grid;place-items:center;color:#0B6DAA;font-size:17px}
+    @media(max-width:900px){.h-flow,.h-guides{grid-template-columns:1fr}.h-step{margin:5px 0}.h-step:after{display:none}.h-head{display:none}.h-row{grid-template-columns:1fr;padding:16px}.h-row>div{margin:2px 0}.h-count{display:none}}
+    </style>
+    """, unsafe_allow_html=True)
+
+    top1, top2 = st.columns([8, 1])
+    with top1:
+        st.markdown("<div class='h-top'><div class='h-logo'>C</div><div class='h-brand'><b>Seguimiento CTAR</b><span>Hospital Dr. Félix Bulnes</span></div><div class='h-live'><span class='h-dot'></span>Información actualizada</div></div>", unsafe_allow_html=True)
+    with top2:
+        if st.button("Salir", use_container_width=True):
+            st.session_state.perfil = None
+            st.rerun()
+
+    activas = sum(x.get("estado") != "Proceso finaliza" for x in datos)
+    st.markdown(f"<div class='h-intro'><div><div class='h-eye'>CONTROL Y TRAZABILIDAD</div><div class='h-title'>Solicitudes al CTAR</div><div class='h-sub'>Consulta el avance de cada solicitud enviada por el Hospital, desde su ingreso hasta el cierre del proceso.</div></div><div class='h-count'><b>{activas}</b>solicitudes activas<small>{len(datos)} registradas en total</small></div></div>", unsafe_allow_html=True)
+
+    descripciones = ["Solicitud recibida", "Antecedentes en análisis", "Acuerdo adoptado", "Documento en firmas", "Seguimiento cerrado"]
+    flujo = "".join(f"<div class='h-step'><span class='h-n'>{i}</span><b>{etapa}</b><small>{descripciones[i-1]}</small></div>" for i, etapa in enumerate(ETAPAS, 1))
+    st.markdown(f"<div class='h-flow'>{flujo}</div>", unsafe_allow_html=True)
+    st.markdown("<div class='h-guides'><div class='h-guide'><b>⌕ ¿Cómo consultar?</b>Busca el equipo o número SIC y abre su ficha para revisar los antecedentes.</div><div class='h-guide'><b>→ Revisa el próximo paso</b>Te indica claramente qué acción sigue y qué falta para continuar.</div><div class='h-guide'><b>✓ Información centralizada</b>El estado, las fechas y los documentos se encuentran en un solo lugar.</div></div>", unsafe_allow_html=True)
+
+    with st.container(border=True):
+        st.markdown("<div class='h-box-title'>Listado de solicitudes</div><div class='h-muted'>Busca y filtra la información registrada</div>", unsafe_allow_html=True)
+        f1, f2, f3, f4 = st.columns([2, 1, 1, 1])
+        buscar = f1.text_input("Buscar", placeholder="Equipo, SIC o inventario...", label_visibility="collapsed")
+        estado = f2.selectbox("Estado", ["Todos los estados"] + ETAPAS, label_visibility="collapsed")
+        servicios = sorted({str(x.get("servicio", "")) for x in datos})
+        servicio = f3.selectbox("Servicio", ["Todos los servicios"] + servicios, label_visibility="collapsed")
+        desde = f4.date_input("Desde", value=None, label_visibility="collapsed")
+
+        filtrados = []
+        for item in datos:
+            texto = f"{item.get('tema','')} {item.get('sic','')} {item.get('inventario','')} {item.get('servicio','')}".lower()
+            fecha_ok = True
+            if desde:
+                try: fecha_ok = date.fromisoformat(str(item.get("fecha_ingreso", ""))[:10]) >= desde
+                except ValueError: fecha_ok = True
+            if (buscar.lower() in texto and
+                (estado == "Todos los estados" or item.get("estado") == estado) and
+                (servicio == "Todos los servicios" or item.get("servicio") == servicio) and fecha_ok):
+                filtrados.append(item)
+
+        st.caption(f"{len(filtrados)} resultado(s) encontrado(s)")
+        st.markdown("<div class='h-head'><div>TEMA O EQUIPO</div><div>SERVICIO</div><div>FECHA DE INGRESO</div><div>ESTADO ACTUAL</div><div>ÚLTIMA ACTUALIZACIÓN</div><div>PRÓXIMO PASO</div><div></div></div>", unsafe_allow_html=True)
+        for item in filtrados:
+            color = COLORES.get(item.get("estado"), "#0B6DAA")
+            html = f"<div class='h-row'><div class='h-topic'><b>{item.get('tema','')}</b><small>SIC {item.get('sic','')} · Inv. {item.get('inventario','')}</small></div><div class='h-service'>{item.get('servicio','')}<small>{item.get('hospital','')}</small></div><div>{fecha_legible(item.get('fecha_ingreso',''))}</div><div><span class='h-pill' style='background:{color}18;color:{color}'>● &nbsp;{item.get('estado','')}</span></div><div>{item.get('ultima_actualizacion','')}</div><div>{item.get('proximo_paso','')}</div><div class='h-arrow'>›</div></div>"
+            st.markdown(html, unsafe_allow_html=True)
+            with st.expander(f"Ver ficha completa — {item.get('tema','')}"):
+                ficha_detalle(item)
+
+
+
+
 def main():
     css(); login(); datos = cargar(); perfil = st.session_state.perfil
+    if perfil == "Hospital":
+        vista_hospital(datos)
+        return
     with st.sidebar:
         if LOGO.exists(): st.image(str(LOGO), use_container_width=True)
         st.markdown(f"**Perfil activo:** {perfil}")

@@ -70,6 +70,20 @@ Con esta configuración, las solicitudes permanecen en Google Sheets y los adjun
 
 El Administrador puede avanzar cada solicitud a la etapa siguiente, realizar un cambio manual de estado y eliminar registros con confirmación.
 
+## Sesiones y borradores CTAR
+
+El Administrador puede importar un borrador de acta Word. La aplicación extrae la sección `Temas a Tratar` y permite revisar, clasificar y asignar cada tema antes de guardarlo. Los temas importados quedan como `Borrador interno` y ocultos para el Hospital por defecto.
+
+Cada registro distingue:
+
+- Clase: solicitud/equipo o tema general de sesión.
+- Sesión CTAR vinculada.
+- Tipo de materia: baja, reposición, adquisición, EETT, evaluación, informativo o administrativo.
+- Nivel de formalización: borrador, en revisión, acuerdo adoptado, acta en firma o formalizado.
+- Visibilidad para el Hospital.
+
+Los antecedentes visibles que todavía no estén formalizados muestran una advertencia expresa para evitar que se interpreten como acuerdos definitivos.
+
 ### Alternativa sin Unidades compartidas
 
 Si la cuenta no dispone de Unidades compartidas, utilice `google_apps_script.gs` y configure en Streamlit:

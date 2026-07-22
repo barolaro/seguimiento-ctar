@@ -38,13 +38,22 @@ git push -u origin main
 
 ```toml
 ADMIN_PASSWORD = "265727"
+SUPABASE_URL = "https://TU-PROYECTO.supabase.co"
+SUPABASE_KEY = "TU-CLAVE-ANON-PUBLICA"
 ```
 
 5. Presiona **Deploy**.
 
-## Importante sobre los datos
+## Base de datos permanente con Supabase
 
-La versión incluida guarda la información en `data/solicitudes.json`. En Streamlit Community Cloud, los archivos escritos durante la ejecución pueden perderse cuando la aplicación se reinicia. Para uso institucional permanente, se recomienda conectar una base de datos externa como Supabase, PostgreSQL o Google Sheets.
+1. Crea un proyecto gratuito en https://supabase.com.
+2. Abre **SQL Editor** y ejecuta el contenido de `supabase_setup.sql`.
+3. En **Project Settings > API**, copia la URL del proyecto y la clave pública `anon`.
+4. Agrégalas a los Secrets de Streamlit junto con la clave del Administrador.
+
+Con esta configuración, las solicitudes permanecen guardadas aunque Streamlit se duerma, reinicie o vuelva a desplegarse. Si no se configuran esas dos variables, la aplicación utiliza temporalmente `data/solicitudes.json`.
+
+El Administrador puede avanzar cada solicitud a la etapa siguiente, realizar un cambio manual de estado y eliminar registros con confirmación.
 
 ## Colores institucionales
 

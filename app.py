@@ -353,7 +353,7 @@ def vista_hospital(datos):
     .h-live{margin-left:auto;color:#607286;font-size:12px}.h-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#14A46F;margin-right:7px}
     .h-intro{display:flex;justify-content:space-between;align-items:end;padding:28px 4px 18px}
     .h-eye{font-size:11px;font-weight:800;letter-spacing:.14em;color:#0872BC}.h-title{font-size:31px;color:#102A43;margin:7px 0 4px}.h-sub{color:#62768B;font-size:14px}
-    .h-count{text-align:center;color:#17334F}.h-count b{display:block;font-size:27px;color:#0B3157}.h-count small{color:#8293A6}
+    .h-count{min-width:150px;text-align:center;color:#17334F;line-height:1.35}.h-count b{display:block;font-size:27px;color:#0B3157;margin-bottom:2px}.h-count span{display:block;font-size:12px}.h-count small{display:block;color:#8293A6;font-size:10px;margin-top:5px}
     .h-flow{display:grid;grid-template-columns:repeat(5,1fr);background:#fff;border:1px solid #D9E4ED;border-radius:14px;padding:20px 22px;margin-bottom:14px;box-shadow:0 5px 18px #123A5A0A}
     .h-step{position:relative;padding-left:40px}.h-step:not(:last-child):after{content:'→';position:absolute;right:10px;top:9px;color:#9AAFC1}.h-n{position:absolute;left:0;top:0;width:30px;height:30px;border-radius:50%;background:#EAF3F9;color:#0872BC;display:grid;place-items:center;font-weight:800}.h-step b{display:block;font-size:13px;color:#142B40}.h-step small{color:#8293A6;font-size:10px}
     .h-guides{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}.h-guide{background:#fff;border:1px solid #DCE6EE;border-radius:11px;padding:13px 16px;color:#607488;font-size:11px}.h-guide b{display:block;color:#18344D;font-size:13px;margin-bottom:2px}
@@ -374,7 +374,7 @@ def vista_hospital(datos):
             st.rerun()
 
     activas = sum(x.get("estado") != "Proceso finaliza" for x in datos)
-    st.markdown(f"<div class='h-intro'><div><div class='h-eye'>CONTROL Y TRAZABILIDAD</div><div class='h-title'>Solicitudes al CTAR</div><div class='h-sub'>Consulta el avance de cada solicitud enviada por el Hospital, desde su ingreso hasta el cierre del proceso.</div></div><div class='h-count'><b>{activas}</b>solicitudes activas<small>{len(datos)} registradas en total</small></div></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='h-intro'><div><div class='h-eye'>CONTROL Y TRAZABILIDAD</div><div class='h-title'>Solicitudes al CTAR</div><div class='h-sub'>Consulta el avance de cada solicitud enviada por el Hospital, desde su ingreso hasta el cierre del proceso.</div></div><div class='h-count'><b>{activas}</b><span>solicitudes activas</span><small>{len(datos)} registradas en total</small></div></div>", unsafe_allow_html=True)
 
     descripciones = ["Solicitud recibida", "Antecedentes en análisis", "Acuerdo adoptado", "Documento en firmas", "Seguimiento cerrado"]
     flujo = "".join(f"<div class='h-step'><span class='h-n'>{i}</span><b>{etapa}</b><small>{descripciones[i-1]}</small></div>" for i, etapa in enumerate(ETAPAS, 1))

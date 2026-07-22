@@ -70,6 +70,17 @@ Con esta configuración, las solicitudes permanecen en Google Sheets y los adjun
 
 El Administrador puede avanzar cada solicitud a la etapa siguiente, realizar un cambio manual de estado y eliminar registros con confirmación.
 
+### Alternativa sin Unidades compartidas
+
+Si la cuenta no dispone de Unidades compartidas, utilice `google_apps_script.gs` y configure en Streamlit:
+
+```toml
+APPS_SCRIPT_URL = "URL-DE-LA-IMPLEMENTACION"
+APPS_SCRIPT_TOKEN = "EL-MISMO-TOKEN-DEL-SCRIPT"
+```
+
+Apps Script ejecuta la carga con la cuenta propietaria de la carpeta y permite utilizar una carpeta normal de Mi unidad.
+
 ## Colores institucionales
 
 - Azul SSMOC: `#006FB3`

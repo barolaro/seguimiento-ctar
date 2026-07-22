@@ -1,10 +1,14 @@
 import hashlib
+import io
 import json
 from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from streamlit_gsheets import GSheetsConnection
 
 BASE = Path(__file__).parent
@@ -66,6 +70,69 @@ def cliente_gsheets():
 
 def almacenamiento_permanente():
     return cliente_gsheets() is not None
+
+
+def cliente_drive():
+    """Crea un cliente privado de Drive usando la misma cuenta de servicio."""
+    try:
+        config = dict(st.secrets["connections"]["gsheets"])
+        info = {k: config[k] for k in (
+            "type", "project_id", "private_key_id", "private_key",
+            "client_email", "client_id", "auth_uri", "token_uri",
+            "auth_provider_x509_cert_url", "client_x509_cert_url",
+        ) if k in config}
+        credenciales = service_account.Credentials.from_service_account_info(
+            info, scopes=["https://www.googleapis.com/auth/drive"]
+        )
+        return build("drive", "v3", credentials=credenciales, cache_discovery=False)
+    except Exception:
+        return None
+
+
+def carpeta_drive_id():
+    try:
+        return str(st.secrets["DRIVE_FOLDER_ID"]).strip()
+    except (KeyError, FileNotFoundError):
+        return ""
+
+
+def subir_a_drive(archivo):
+    drive = cliente_drive()
+    carpeta = carpeta_drive_id()
+    if not drive or not carpeta:
+        raise RuntimeError("Falta configurar DRIVE_FOLDER_ID o las credenciales de Google Drive.")
+    nombre = Path(archivo.name).name
+    medio = MediaIoBaseUpload(
+        io.BytesIO(archivo.getvalue()),
+        mimetype=archivo.type or "application/octet-stream",
+        resumable=False,
+    )
+    creado = drive.files().create(
+        body={"name": nombre, "parents": [carpeta]},
+        media_body=medio,
+        fields="id,name,mimeType,webViewLink",
+        supportsAllDrives=True,
+    ).execute()
+    return {
+        "id": creado["id"],
+        "nombre": creado.get("name", nombre),
+        "mime_type": creado.get("mimeType", archivo.type or "application/octet-stream"),
+        "url": creado.get("webViewLink", ""),
+    }
+
+
+def descargar_de_drive(file_id):
+    drive = cliente_drive()
+    if not drive:
+        raise RuntimeError("No fue posible conectar con Google Drive.")
+    salida = io.BytesIO()
+    descarga = MediaIoBaseDownload(
+        salida, drive.files().get_media(fileId=file_id, supportsAllDrives=True)
+    )
+    terminado = False
+    while not terminado:
+        _, terminado = descarga.next_chunk()
+    return salida.getvalue()
 
 
 def cargar():
@@ -169,9 +236,19 @@ def ficha_detalle(s):
     st.write("**Observaciones:**", s["observaciones"] or "Sin observaciones")
     if s.get("documentos"):
         st.write("**Documentos asociados:**")
-        for ruta in s["documentos"]:
-            archivo = BASE / ruta
-            if archivo.exists(): st.download_button(f"📎 {archivo.name}", archivo.read_bytes(), file_name=archivo.name, key=f"d_{s['id']}_{archivo.name}")
+        for i, documento in enumerate(s["documentos"]):
+            if isinstance(documento, dict) and documento.get("id"):
+                nombre = documento.get("nombre", "Documento")
+                try:
+                    contenido = descargar_de_drive(documento["id"])
+                    st.download_button(
+                        f"📎 {nombre}", contenido, file_name=nombre,
+                        mime=documento.get("mime_type"), key=f"d_{s['id']}_{i}"
+                    )
+                except Exception as error:
+                    st.warning(f"No fue posible abrir {nombre}: {error}")
+            else:
+                st.caption("⚠️ Adjunto antiguo no disponible. Debe cargarse nuevamente para guardarlo en Drive.")
 
 
 def main():
@@ -205,9 +282,13 @@ def main():
                 if st.form_submit_button("Guardar solicitud", type="primary"):
                     if not tema or not servicio or not motivo: st.error("Completa los campos obligatorios.")
                     else:
-                        doc_paths=[]; UPLOAD_DIR.mkdir(parents=True,exist_ok=True)
-                        for doc in docs:
-                            safe=f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{Path(doc.name).name}"; path=UPLOAD_DIR/safe; path.write_bytes(doc.getbuffer()); doc_paths.append(str(path.relative_to(BASE)))
+                        doc_paths=[]
+                        try:
+                            for doc in docs:
+                                doc_paths.append(subir_a_drive(doc))
+                        except Exception as error:
+                            st.error(f"No fue posible guardar los adjuntos en Google Drive: {error}")
+                            st.stop()
                         datos.insert(0,{"id":f"CTAR-{datetime.now().strftime('%Y%m%d%H%M%S')}","tema":tema,"hospital":"Hospital Dr. Félix Bulnes","servicio":servicio,"sic":sic or "Por asignar","inventario":inventario or "Por confirmar","motivo":motivo,"fecha_ingreso":ingreso.isoformat(),"estado":ETAPAS[0],"ultima_actualizacion":f"{date.today().isoformat()} - Solicitud registrada","proximo_paso":"CTAR revisará los antecedentes recibidos","observaciones":obs,"documentos":doc_paths})
                         guardar(datos); st.success("Solicitud registrada correctamente."); st.rerun()
 
@@ -241,11 +322,33 @@ def main():
                 fecha_editada = ed5.text_input("Fecha de ingreso", s["fecha_ingreso"], key=f"fecha_edit_{s['id']}")
                 motivo_editado = st.text_area("Motivo de la solicitud", s["motivo"], key=f"motivo_edit_{s['id']}")
                 observaciones_editadas = st.text_area("Observaciones", s.get("observaciones", ""), key=f"obs_edit_{s['id']}")
+                docs_nuevos = st.file_uploader(
+                    "Agregar nuevos documentos", accept_multiple_files=True,
+                    key=f"docs_edit_{s['id']}"
+                )
+                documentos_actuales = [
+                    d.get("nombre", "Documento") if isinstance(d, dict) else str(d)
+                    for d in s.get("documentos", [])
+                ]
+                quitar_documentos = st.multiselect(
+                    "Quitar documentos del registro", documentos_actuales,
+                    key=f"remove_docs_{s['id']}"
+                ) if documentos_actuales else []
                 nuevo=st.selectbox("Cambiar estado manualmente",ETAPAS,index=idx,key=f"est_{s['id']}")
                 actual=st.text_input("Última actualización",s["ultima_actualizacion"],key=f"act_{s['id']}")
                 prox=st.text_input("Próximo paso",s["proximo_paso"],key=f"prox_{s['id']}")
                 if st.button("Guardar todos los cambios",key=f"save_{s['id']}"):
-                    s.update({"tema":tema_editado,"servicio":servicio_editado,"sic":sic_editado,"inventario":inventario_editado,"fecha_ingreso":fecha_editada,"motivo":motivo_editado,"observaciones":observaciones_editadas,"estado":nuevo,"ultima_actualizacion":actual,"proximo_paso":prox})
+                    documentos = [
+                        d for d in s.get("documentos", [])
+                        if (d.get("nombre", "Documento") if isinstance(d, dict) else str(d)) not in quitar_documentos
+                    ]
+                    try:
+                        for doc in docs_nuevos:
+                            documentos.append(subir_a_drive(doc))
+                    except Exception as error:
+                        st.error(f"No fue posible guardar los nuevos adjuntos: {error}")
+                        st.stop()
+                    s.update({"tema":tema_editado,"servicio":servicio_editado,"sic":sic_editado,"inventario":inventario_editado,"fecha_ingreso":fecha_editada,"motivo":motivo_editado,"observaciones":observaciones_editadas,"estado":nuevo,"ultima_actualizacion":actual,"proximo_paso":prox,"documentos":documentos})
                     guardar(datos); st.success("Cambios guardados correctamente."); st.rerun()
                 st.divider()
                 confirmar = st.checkbox("Confirmo que deseo eliminar esta solicitud", key=f"confirm_{s['id']}")

@@ -61,6 +61,8 @@ def css():
     .solo-lectura{background:#EAF7EF;border:1px solid #BFE2CB;color:#27683D;padding:.65rem .8rem;border-radius:8px;font-size:.85rem}
     div[data-testid="stMetric"]{background:white;border:1px solid #DEE7EC;padding:.8rem 1rem;border-radius:11px;box-shadow:0 3px 10px #153D540D}
     .stButton>button{border-radius:8px;font-weight:700}.stButton>button[kind="primary"]{background:#006FB3;border-color:#006FB3}
+    div[data-testid="stDialog"] div[role="dialog"]{position:fixed!important;right:0!important;top:0!important;height:100vh!important;max-height:100vh!important;width:680px!important;max-width:96vw!important;border-radius:0!important;margin:0!important;padding:22px 30px!important;overflow-y:auto!important}
+    .admin-eye{font-size:11px;font-weight:800;letter-spacing:.14em;color:#0872BC}.admin-title{font-size:24px;font-weight:700;color:#142B40;line-height:1.25;margin:10px 0 8px}.admin-meta{color:#718595;font-size:12px;margin-bottom:18px}.admin-section{font-size:14px;font-weight:800;color:#183A50;border-top:1px solid #E1E8EE;padding-top:18px;margin:20px 0 10px}.admin-summary{background:#EEF6FB;border-left:3px solid #0872BC;border-radius:6px;padding:13px 15px;color:#294A62;font-size:12px;line-height:1.55;margin:14px 0}
     @media(max-width:900px){.pasos{grid-template-columns:1fr}.paso{min-height:auto}}
     </style>""", unsafe_allow_html=True)
 
@@ -382,6 +384,104 @@ def ficha_hospital_lateral(item):
             st.caption("Adjunto antiguo no disponible; debe cargarse nuevamente.")
 
 
+@st.dialog("Gestión de solicitud", width="large")
+def ficha_admin_lateral(s, datos):
+    estado = s.get("estado", ETAPAS[0])
+    idx = ETAPAS.index(estado) if estado in ETAPAS else 0
+    color = COLORES.get(estado, "#0B6DAA")
+    st.markdown("<div class='admin-eye'>FICHA ADMINISTRATIVA</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='admin-title'>{s.get('tema','')}</div>", unsafe_allow_html=True)
+    st.markdown(
+        f"<span class='estado' style='background:{color}'>{estado}</span> "
+        f"<span class='estado' style='background:#60758A'>{s.get('formalizacion','En revisión CTAR')}</span>"
+        f"<div class='admin-meta'>CTAR N.° {s.get('ctar_numero','Sin asignar')} · {s.get('tipo_materia','Tema general CTAR')} · {s.get('servicio','')}</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f"<div class='admin-summary'><b>Última actualización:</b> {s.get('ultima_actualizacion','')}<br>"
+        f"<b>Próximo paso:</b> {s.get('proximo_paso','')}</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("<div class='admin-section'>Avance del proceso</div>", unsafe_allow_html=True)
+    if idx < len(ETAPAS) - 1:
+        siguiente = ETAPAS[idx + 1]
+        if st.button(f"Avanzar a: {siguiente} →", key=f"drawer_next_{s['id']}", type="primary", use_container_width=True):
+            s.update({
+                "estado": siguiente,
+                "ultima_actualizacion": f"{date.today().isoformat()} - Estado actualizado a {siguiente}",
+                "proximo_paso": PROXIMOS[siguiente],
+            })
+            guardar(datos)
+            st.rerun()
+    else:
+        st.success("Esta solicitud ya se encuentra finalizada.")
+
+    st.markdown("<div class='admin-section'>Editar información</div>", unsafe_allow_html=True)
+    with st.form(f"drawer_edit_{s['id']}"):
+        tema_editado = st.text_input("Tema o equipo", s.get("tema", ""))
+        servicio_editado = st.text_input("Servicio solicitante", s.get("servicio", ""))
+        ed1, ed2 = st.columns(2)
+        sic_editado = ed1.text_input("Número SIC", s.get("sic", ""))
+        inventario_editado = ed2.text_input("Número de inventario", s.get("inventario", ""))
+        fecha_editada = st.text_input("Fecha de ingreso", s.get("fecha_ingreso", ""))
+        motivo_editado = st.text_area("Motivo de la solicitud", s.get("motivo", ""))
+        observaciones_editadas = st.text_area("Observaciones", s.get("observaciones", ""))
+        mg1, mg2 = st.columns(2)
+        ctar_editado = mg1.text_input("Sesión CTAR", s.get("ctar_numero", "Sin asignar"))
+        tipo_actual = s.get("tipo_materia", "Tema general CTAR")
+        tipo_editado = mg2.selectbox("Tipo de materia", TIPOS_MATERIA, index=TIPOS_MATERIA.index(tipo_actual) if tipo_actual in TIPOS_MATERIA else len(TIPOS_MATERIA)-1)
+        form_actual = s.get("formalizacion", "En revisión CTAR")
+        formalizacion_editada = st.selectbox("Nivel de formalización", FORMALIZACIONES, index=FORMALIZACIONES.index(form_actual) if form_actual in FORMALIZACIONES else 1)
+        publicar_editado = st.checkbox("Visible para el Hospital", value=valor_booleano(s.get("publicar_hospital", True)))
+        nuevo = st.selectbox("Estado del proceso", ETAPAS, index=idx)
+        actual = st.text_input("Última actualización", s.get("ultima_actualizacion", ""))
+        prox = st.text_input("Próximo paso", s.get("proximo_paso", ""))
+
+        documentos_actuales = [d.get("nombre", "Documento") if isinstance(d, dict) else str(d) for d in s.get("documentos", [])]
+        quitar_documentos = st.multiselect("Quitar documentos", documentos_actuales) if documentos_actuales else []
+        docs_nuevos = st.file_uploader("Agregar documentos", accept_multiple_files=True)
+        guardar_cambios = st.form_submit_button("Guardar todos los cambios", type="primary", use_container_width=True)
+
+    if guardar_cambios:
+        documentos = [d for d in s.get("documentos", []) if (d.get("nombre", "Documento") if isinstance(d, dict) else str(d)) not in quitar_documentos]
+        try:
+            for doc in docs_nuevos:
+                documentos.append(subir_a_drive(doc))
+        except Exception as error:
+            st.error(f"No fue posible guardar los nuevos adjuntos: {error}")
+            st.stop()
+        s.update({
+            "tema": tema_editado, "servicio": servicio_editado, "sic": sic_editado,
+            "inventario": inventario_editado, "fecha_ingreso": fecha_editada,
+            "motivo": motivo_editado, "observaciones": observaciones_editadas,
+            "estado": nuevo, "ultima_actualizacion": actual, "proximo_paso": prox,
+            "documentos": documentos, "ctar_numero": ctar_editado,
+            "tipo_materia": tipo_editado, "formalizacion": formalizacion_editada,
+            "publicar_hospital": publicar_editado,
+        })
+        guardar(datos)
+        st.rerun()
+
+    st.markdown("<div class='admin-section'>Documentos asociados</div>", unsafe_allow_html=True)
+    if not s.get("documentos"):
+        st.caption("No hay documentos asociados.")
+    for i, documento in enumerate(s.get("documentos", [])):
+        if isinstance(documento, dict) and documento.get("id"):
+            nombre = documento.get("nombre", "Documento")
+            try:
+                contenido = descargar_de_drive(documento["id"], documento.get("fuente", "drive"))
+                st.download_button(f"📎 {nombre}", contenido, file_name=nombre, mime=documento.get("mime_type"), key=f"admin_doc_{s['id']}_{i}", use_container_width=True)
+            except Exception as error:
+                st.warning(f"No fue posible abrir {nombre}: {error}")
+
+    st.markdown("<div class='admin-section'>Eliminar registro</div>", unsafe_allow_html=True)
+    confirmar = st.checkbox("Confirmo que deseo eliminar esta solicitud", key=f"drawer_confirm_{s['id']}")
+    if st.button("🗑 Eliminar solicitud", key=f"drawer_delete_{s['id']}", disabled=not confirmar, use_container_width=True):
+        eliminar_solicitud(s["id"])
+        st.rerun()
+
+
 def vista_hospital(datos):
     datos = [d for d in datos if valor_booleano(d.get("publicar_hospital", True))]
     st.markdown("""
@@ -592,68 +692,13 @@ def main():
     st.caption(f"{len(filtrados)} resultado(s) encontrado(s)")
     for s in filtrados:
         color=COLORES[s["estado"]]
-        st.markdown(f"<div class='ficha'><h4>{s['tema']}</h4><div class='meta'>CTAR {s.get('ctar_numero','Sin asignar')} · {s.get('tipo_materia','Tema general CTAR')} · {s['servicio']} · SIC {s['sic']} · Ingreso {s['fecha_ingreso']}</div><span class='estado' style='background:{color}'>{s['estado']}</span> <span class='estado' style='background:#60758A'>{s.get('formalizacion','En revisión CTAR')}</span><div class='proximo'><b>Próximo paso:</b> {s['proximo_paso']}</div></div>",unsafe_allow_html=True)
-        with st.expander(f"Ver ficha completa — {s['tema']}"):
-            ficha_detalle(s)
-            if perfil == "Administrador CTAR":
-                idx=ETAPAS.index(s["estado"])
-                st.markdown("#### Gestión de la solicitud")
-                if idx < len(ETAPAS)-1:
-                    siguiente = ETAPAS[idx+1]
-                    if st.button(f"Avanzar a: {siguiente} →", key=f"next_{s['id']}", type="primary", use_container_width=True):
-                        s.update({"estado": siguiente, "ultima_actualizacion": f"{date.today().isoformat()} - Estado actualizado a {siguiente}", "proximo_paso": PROXIMOS[siguiente]})
-                        guardar(datos); st.success(f"La solicitud avanzó a {siguiente}."); st.rerun()
-                else:
-                    st.success("Esta solicitud ya se encuentra finalizada.")
-                st.markdown("##### Editar información ingresada")
-                ed1, ed2 = st.columns(2)
-                tema_editado = ed1.text_input("Tema o equipo", s["tema"], key=f"tema_edit_{s['id']}")
-                servicio_editado = ed2.text_input("Servicio solicitante", s["servicio"], key=f"serv_edit_{s['id']}")
-                ed3, ed4, ed5 = st.columns(3)
-                sic_editado = ed3.text_input("Número SIC", s["sic"], key=f"sic_edit_{s['id']}")
-                inventario_editado = ed4.text_input("Número de inventario", s["inventario"], key=f"inv_edit_{s['id']}")
-                fecha_editada = ed5.text_input("Fecha de ingreso", s["fecha_ingreso"], key=f"fecha_edit_{s['id']}")
-                motivo_editado = st.text_area("Motivo de la solicitud", s["motivo"], key=f"motivo_edit_{s['id']}")
-                observaciones_editadas = st.text_area("Observaciones", s.get("observaciones", ""), key=f"obs_edit_{s['id']}")
-                mg1, mg2, mg3 = st.columns(3)
-                ctar_editado = mg1.text_input("Sesión CTAR", s.get("ctar_numero", "Sin asignar"), key=f"ctar_edit_{s['id']}")
-                tipo_actual = s.get("tipo_materia", "Tema general CTAR")
-                tipo_editado = mg2.selectbox("Tipo de materia", TIPOS_MATERIA, index=TIPOS_MATERIA.index(tipo_actual) if tipo_actual in TIPOS_MATERIA else len(TIPOS_MATERIA)-1, key=f"tipo_edit_{s['id']}")
-                form_actual = s.get("formalizacion", "En revisión CTAR")
-                formalizacion_editada = mg3.selectbox("Nivel de formalización", FORMALIZACIONES, index=FORMALIZACIONES.index(form_actual) if form_actual in FORMALIZACIONES else 1, key=f"formal_edit_{s['id']}")
-                publicar_editado = st.checkbox("Visible para el Hospital", value=valor_booleano(s.get("publicar_hospital", True)), key=f"publicar_edit_{s['id']}")
-                docs_nuevos = st.file_uploader(
-                    "Agregar nuevos documentos", accept_multiple_files=True,
-                    key=f"docs_edit_{s['id']}"
-                )
-                documentos_actuales = [
-                    d.get("nombre", "Documento") if isinstance(d, dict) else str(d)
-                    for d in s.get("documentos", [])
-                ]
-                quitar_documentos = st.multiselect(
-                    "Quitar documentos del registro", documentos_actuales,
-                    key=f"remove_docs_{s['id']}"
-                ) if documentos_actuales else []
-                nuevo=st.selectbox("Cambiar estado manualmente",ETAPAS,index=idx,key=f"est_{s['id']}")
-                actual=st.text_input("Última actualización",s["ultima_actualizacion"],key=f"act_{s['id']}")
-                prox=st.text_input("Próximo paso",s["proximo_paso"],key=f"prox_{s['id']}")
-                if st.button("Guardar todos los cambios",key=f"save_{s['id']}"):
-                    documentos = [
-                        d for d in s.get("documentos", [])
-                        if (d.get("nombre", "Documento") if isinstance(d, dict) else str(d)) not in quitar_documentos
-                    ]
-                    try:
-                        for doc in docs_nuevos:
-                            documentos.append(subir_a_drive(doc))
-                    except Exception as error:
-                        st.error(f"No fue posible guardar los nuevos adjuntos: {error}")
-                        st.stop()
-                    s.update({"tema":tema_editado,"servicio":servicio_editado,"sic":sic_editado,"inventario":inventario_editado,"fecha_ingreso":fecha_editada,"motivo":motivo_editado,"observaciones":observaciones_editadas,"estado":nuevo,"ultima_actualizacion":actual,"proximo_paso":prox,"documentos":documentos,"ctar_numero":ctar_editado,"tipo_materia":tipo_editado,"formalizacion":formalizacion_editada,"publicar_hospital":publicar_editado})
-                    guardar(datos); st.success("Cambios guardados correctamente."); st.rerun()
-                st.divider()
-                confirmar = st.checkbox("Confirmo que deseo eliminar esta solicitud", key=f"confirm_{s['id']}")
-                if st.button("🗑 Eliminar solicitud", key=f"delete_{s['id']}", disabled=not confirmar):
-                    eliminar_solicitud(s["id"]); st.success("Solicitud eliminada correctamente."); st.rerun()
+        tarjeta, abrir = st.columns([12, 1])
+        with tarjeta:
+            st.markdown(f"<div class='ficha'><h4>{s['tema']}</h4><div class='meta'>CTAR {s.get('ctar_numero','Sin asignar')} · {s.get('tipo_materia','Tema general CTAR')} · {s['servicio']} · SIC {s['sic']} · Ingreso {s['fecha_ingreso']}</div><span class='estado' style='background:{color}'>{s['estado']}</span> <span class='estado' style='background:#60758A'>{s.get('formalizacion','En revisión CTAR')}</span><div class='proximo'><b>Próximo paso:</b> {s['proximo_paso']}</div></div>",unsafe_allow_html=True)
+        with abrir:
+            st.write("")
+            if st.button("›", key=f"open_admin_{s['id']}", help="Abrir gestión lateral", use_container_width=True):
+                ficha_admin_lateral(s, datos)
     if perfil == "Administrador CTAR" and datos:
         st.divider(); df=pd.DataFrame(datos); st.download_button("⬇ Descargar seguimiento en CSV",df.to_csv(index=False).encode("utf-8-sig"),"seguimiento_ctar.csv","text/csv")
 
